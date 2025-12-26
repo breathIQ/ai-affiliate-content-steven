@@ -35,6 +35,9 @@ Route::group(['prefix' => 'v1/admin'], function () {
 
         //***********User Management************************** */
         Route::apiResource('/user', UserController::class);
+        Route::get('user-request', [UserController::class, 'getUserRequest']);
+        Route::post('request-action/{id}', [UserController::class, 'updateRequestStatus']);
+
        
     });
 

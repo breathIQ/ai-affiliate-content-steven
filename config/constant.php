@@ -5,6 +5,12 @@ return [
     'role' => [
         'Admin' => 1,
         'User' => 2,
+    ],
+
+    'status' => [
+        'Active' => 1,
+        'Inactive' => 0,
+        'Reject' => 2,
     ]
 
 ];
