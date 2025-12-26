@@ -14,9 +14,15 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('email')->unique();
+            $table->string('email')->unique()->nullable();
             $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
+            $table->string('password')->nullable();
+            $table->string('phone_no')->nullable();
+            $table->unsignedBigInteger('role_id');
+            $table->foreign('role_id')->references('id')->on('roles')->onDelete('cascade');
+            $table->string('affiliate_id')->nullable();
+            $table->string('avatar')->nullable();
+            $table->tinyInteger('status')->default(1)->comment('1=active, 0=inactive, 2=reject');
             $table->rememberToken();
             $table->timestamps();
         });
@@ -25,6 +31,7 @@ return new class extends Migration
             $table->string('email')->primary();
             $table->string('token');
             $table->timestamp('created_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
         });
 
         Schema::create('sessions', function (Blueprint $table) {
