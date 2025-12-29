@@ -4,13 +4,14 @@ namespace App\Http\Controllers\Api\v1\User;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Models\{User,Role};
+use App\Models\{User,Role,SocialAccount};
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Exception;
+use Laravel\Socialite\Facades\Socialite;
 
 class UserAuthController extends ResponseController
 {
@@ -31,6 +32,8 @@ class UserAuthController extends ResponseController
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'role_id' => $userRole->id ?? 2,
+                'joined_by' => 'Email',
+                'status' => Config::get('constant.status.Inactive'),
             ]);
 
             $token = $user->createToken('api_token')->plainTextToken;
@@ -64,15 +67,23 @@ class UserAuthController extends ResponseController
                             $q->where('role', 'User');
                         })->first();
             
-            if (!$user || !Hash::check($request->password, $user->password)) {
-                // throw ValidationException::withMessages([
-                //     'email' => ['The provided credentials are incorrect.'],
-                // ]);
-                return $this->sendError('Invalid Email or Password.', [], 500);
+            // Check if user exists
+            if (!$user) {
+                return $this->sendError('Invalid Email.', [], 401);
             }
-    
+
+            // Check if account is inactive
+            if ($user->status == 0) {
+                return $this->sendError(
+                    'Your account is inactive. Please contact admin.',
+                    [],
+                    403
+                );
+            }
+            
+            // Check password
             if ($user && Hash::check($request->password, $user->password)) {
-                // Auth::login($user); // Login manually
+                
                 $token = $user->createToken('user-token')->plainTextToken;
                 // dd($token);
                 $user['access_token'] = $token;
@@ -155,5 +166,58 @@ class UserAuthController extends ResponseController
                 'line' => $err->getLine()
             ], 500);
         }
+    }
+
+    public function socialLogin(Request $request)
+    {
+        $request->validate([
+            'provider' => 'required|in:instagram,tiktok',
+            'access_token' => 'required',
+        ]);
+
+        $socialUser = Socialite::driver($request->provider)
+            ->stateless()
+            ->userFromToken($request->access_token);
+
+        // Check if social account exists
+        $social = SocialAccount::where([
+            'provider' => $request->provider,
+            'provider_user_id' => $socialUser->getId()
+        ])->first();
+
+        if ($social) {
+            $user = $social->user;
+        } else {
+            // Try match by email
+            $user = User::where('email', $socialUser->getEmail())->first();
+
+            if (!$user) {
+                $user = User::create([
+                    'name' => $socialUser->getName() ?? $socialUser->getNickname(),
+                    'email' => $socialUser->getEmail(),
+                    'avatar' => $socialUser->getAvatar(),
+                    'password' => null, // social-only user
+                    'status' => Config::get('constant.status.Inactive'),
+                    'joined_by' => $request->provider,
+                ]);
+            }
+
+            SocialAccount::create([
+                'user_id' => $user->id,
+                'provider' => $request->provider,
+                'provider_user_id' => $socialUser->getId(),
+                'username' => $socialUser->getNickname(),
+                'access_token' => $socialUser->token,
+                'refresh_token' => $socialUser->refreshToken,
+                'token_expires_at' => now()->addSeconds($socialUser->expiresIn ?? 0),
+            ]);
+        }
+
+        $token = $user->createToken('api_token')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user' => $user,
+        ]);
     }
 }

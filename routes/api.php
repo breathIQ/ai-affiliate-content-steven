@@ -4,7 +4,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
-use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController};
+use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController,AffiliateController,
+FileController};
 use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController};
 
 
@@ -36,9 +37,17 @@ Route::group(['prefix' => 'v1/admin'], function () {
         //***********User Management************************** */
         Route::apiResource('/user', UserController::class);
         Route::get('user-request', [UserController::class, 'getUserRequest']);
-        Route::post('request-action/{id}', [UserController::class, 'updateRequestStatus']);
+        Route::post('update-status/{id}', [UserController::class, 'updateUserStatus']);
+        // Route::post('update-status/{id}', [UserController::class, 'updateUserActiveStatus']);
 
-       
+        //*****************Invite Affiliates ************************** */
+        Route::post('/affiliate/invite', [AffiliateController::class, 'sendAffiliateInvite']);
+
+        //***************file functionality************************* */
+        Route::post('/file/upload', [FileController::class, 'upload']);
+        Route::delete('/delete/file/{id}', [FileController::class, 'destroy']);
+
+
     });
 
 });
@@ -48,6 +57,7 @@ Route::group(['prefix' => 'v1/user'], function () {
 
     Route::post('/register', [UserAuthController::class, 'register']);
     Route::post('/login', [UserAuthController::class, 'login']);
+    Route::post('/social-login', [UserAuthController::class, 'socialLogin']);
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
 

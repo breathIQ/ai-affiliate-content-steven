@@ -22,6 +22,7 @@ return new class extends Migration
             $table->foreign('role_id')->references('id')->on('roles')->onDelete('cascade');
             $table->string('affiliate_id')->nullable();
             $table->string('avatar')->nullable();
+            $table->string('joined_by')->nullable();
             $table->tinyInteger('status')->default(0)->comment('1=active, 0=inactive, 2=reject');
             $table->rememberToken();
             $table->timestamps();

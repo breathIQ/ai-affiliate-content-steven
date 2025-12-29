@@ -52,6 +52,7 @@ class UserController extends ResponseController
             $user_data['name'] =  $user->name;
             $user_data['affiliate_id'] =  $user->affiliate_id;
             $user_data['email'] =  $user->email;
+            $user_data['status'] =  $user->status;
             $user_data['image'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : null;
             
 
@@ -121,14 +122,14 @@ class UserController extends ResponseController
 
     }
 
-    public function updateRequestStatus($id, Request $request)
+    public function updateUserStatus($id, Request $request)
     {
         try {
             // Validate the incoming request for 'status' field
             $validator = Validator::make($request->all(), [
-                'status' => 'required|in:1,2',  // 1 for accepted, 2 for rejected
+                'status' => 'required|in:0,1,2',  // 0 = inactive, 1 = accepted, 2 = rejected
             ], [
-                'status.in' => 'Status should 1 for accepted, 2 for rejected.',
+                'status.in' => 'Status should be 0 for inactive, 1 for accepted, or 2 for rejected.',
             ]);
 
             if ($validator->fails()) {
@@ -138,26 +139,30 @@ class UserController extends ResponseController
             // Find the user by ID
             $user = User::findOrFail($id);
 
-            // Begin database transaction
-            DB::transaction(function () use ($user, $request) {
+            $user->status = $request->status;
+            $user->save();
 
-                // Update the registration status based on the request
-                $user->status = $request->status; // 1 for accepted, 2 for rejected
-                $user->save();
+            // Status-based message
+            $message = match ((int) $request->status) {
+                0 => 'User account has been deactivated successfully.',
+                1 => 'User registration request accepted successfully.',
+                2 => 'User registration request rejected successfully.',
+            };
 
-            });
-
-            // Send a success response
-            return $this->sendResponse([], 'User registration request ' . ($request->status == 1 ? 'accepted' : 'rejected') . ' successfully.', 200);
+            return $this->sendResponse([], $message, 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            // Handle case if user is not found
             return $this->sendError('User not found.', [], 404);
 
         } catch (\Exception $e) {
-            // Handle any other errors
-            return $this->sendError('Failed to update user registration status: ' . $e->getMessage(), [], 500);
+            return $this->sendError(
+                'Failed to update user status: ' . $e->getMessage(),
+                [],
+                500
+            );
         }
     }
+
+
 
 }

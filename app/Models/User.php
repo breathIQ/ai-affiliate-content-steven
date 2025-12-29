@@ -26,6 +26,7 @@ class User extends Authenticatable
         'role_id',
         'affiliate_id',
         'avatar',
+        'joined_by',
         'status'
     ];
 
