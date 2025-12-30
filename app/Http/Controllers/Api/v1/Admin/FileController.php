@@ -25,7 +25,7 @@ class FileController extends ResponseController
             return $this->sendResponse($file, 'File get successfully.', 200);
 
         } catch (\Exception $e) {
-            return $this->sendError('File upload failed.', ['error' => $e->getMessage()], 500);
+            return $this->sendError('File get failed.', ['error' => $e->getMessage()], 500);
         }
     }
     public function upload(Request $request)
@@ -77,7 +77,7 @@ class FileController extends ResponseController
             //chapter wise data
             // $chapters = preg_split('/Chapter\s+\d+/i', $text);
 
-            //$content_store = $this->getChapter($text,$record);
+            $content_store = $this->storeChapter($text,$record);
             
 
             return $this->sendResponse($record, 'File uploaded successfully.', 200);
@@ -110,7 +110,7 @@ class FileController extends ResponseController
         
     }
 
-    private function getChapter($text,$book)
+    private function storeChapter($text,$book)
     {
         
         $units = preg_split(
@@ -132,7 +132,7 @@ class FileController extends ResponseController
                 'content' => trim($units[$i + 1]),  // Content of UNIT
             ];
         }
-        dd($finalUnits);
+        // dd($finalUnits);
         foreach ($finalUnits as $index => $unit) {
             Chapter::create([
                 'book_id' => $book->id,
@@ -143,4 +143,5 @@ class FileController extends ResponseController
         }
 
     }
+
 }

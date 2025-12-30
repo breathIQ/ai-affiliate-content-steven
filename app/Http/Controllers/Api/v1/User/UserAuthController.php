@@ -34,7 +34,7 @@ class UserAuthController extends ResponseController
                 'password' => Hash::make($request->password),
                 'role_id' => $userRole->id ?? 2,
                 'joined_by' => 'Email',
-                'status' => Config::get('constant.status.Inactive'),
+                'status' => Config::get('constant.status.Active'),
             ]);
 
             $token = $user->createToken('api_token')->plainTextToken;
@@ -171,10 +171,13 @@ class UserAuthController extends ResponseController
 
     public function socialLogin(Request $request)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'provider' => 'required|in:instagram,tiktok',
             'access_token' => 'required',
         ]);
+        if ($validator->fails()) {
+            return $this->sendValidationError($validator->errors());
+        }
 
         $socialUser = Socialite::driver($request->provider)
             ->stateless()
@@ -198,7 +201,7 @@ class UserAuthController extends ResponseController
                     'email' => $socialUser->getEmail(),
                     'avatar' => $socialUser->getAvatar(),
                     'password' => null, // social-only user
-                    'status' => Config::get('constant.status.Inactive'),
+                    'status' => Config::get('constant.status.Active'),
                     'joined_by' => $request->provider,
                 ]);
             }
@@ -215,10 +218,39 @@ class UserAuthController extends ResponseController
         }
 
         $token = $user->createToken('api_token')->plainTextToken;
+        $user['access_token'] = $token;
+        return $this->sendResponse(['user' => $user], 'user login successfully', 200);
+    }
 
-        return response()->json([
-            'token' => $token,
-            'user' => $user,
+    public function link(Request $request)
+    {
+       
+        $validator = Validator::make($request->all(), [
+            'provider' => 'required|in:instagram,tiktok',
+            'access_token' => 'required',
         ]);
+        if ($validator->fails()) {
+            return $this->sendValidationError($validator->errors());
+        }
+
+        $socialUser = Socialite::driver($request->provider)
+            ->stateless()
+            ->userFromToken($request->access_token);
+
+        SocialAccount::updateOrCreate(
+            [
+                'provider' => $request->provider,
+                'provider_user_id' => $socialUser->getId(),
+            ],
+            [
+                'user_id' => auth()->id(),
+                'username' => $socialUser->getNickname(),
+                'access_token' => $socialUser->token,
+                'refresh_token' => $socialUser->refreshToken,
+                'token_expires_at' => now()->addSeconds($socialUser->expiresIn ?? 0),
+            ]
+        );
+
+        return $this->sendResponse([], 'Account linked successfully', 200);
     }
 }

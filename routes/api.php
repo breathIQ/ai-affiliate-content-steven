@@ -59,6 +59,7 @@ Route::group(['prefix' => 'v1/user'], function () {
     Route::post('/register', [UserAuthController::class, 'register']);
     Route::post('/login', [UserAuthController::class, 'login']);
     Route::post('/social-login', [UserAuthController::class, 'socialLogin']);
+    Route::get('/get-chapter', [UserDashboardController::class, 'getChapter']);
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
 
@@ -67,6 +68,7 @@ Route::group(['prefix' => 'v1/user'], function () {
         //**************Auth functionaity route**************************** */
         Route::post('logout', [UserAuthController::class, 'logout']);
         Route::post('change-password', [UserAuthController::class, 'chnagePassword']);
+        Route::post('/social/account/link', [UserAuthController::class, 'link']);
 
     });
 });
