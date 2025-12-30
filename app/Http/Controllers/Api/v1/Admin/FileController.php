@@ -6,12 +6,28 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Models\{File};
+use App\Models\{File,Chapter};
 use Smalot\PdfParser\Parser;
 use Illuminate\Support\Facades\Storage;
 
 class FileController extends ResponseController
 {
+
+    public function getFile(Request $request)
+    {
+        try{
+
+            $file = File::first();
+            if(!$file){
+                return $this->sendError('File data not found.', [], 500);
+            }
+            $file['full_path'] = asset(Storage::url($file->file_path));
+            return $this->sendResponse($file, 'File get successfully.', 200);
+
+        } catch (\Exception $e) {
+            return $this->sendError('File upload failed.', ['error' => $e->getMessage()], 500);
+        }
+    }
     public function upload(Request $request)
     {
         try {
@@ -40,10 +56,15 @@ class FileController extends ResponseController
             // Get text
             $text = $pdf->getText();
 
-            // Word count
-            $wordCount = str_word_count($text);
+            // Fix hyphenated line breaks
+            $text = preg_replace("/-\s*\n\s*/", "", $text);
 
-           
+            // Normalize whitespace
+            $text = preg_replace('/\s+/', ' ', $text);
+
+            // Unicode-safe word count
+            $wordCount = preg_match_all('/\p{L}+/u', $text);
+
             // Page count
             $pages = count($pdf->getPages());
             // dd($pages,$wordCount,$text);
@@ -52,6 +73,12 @@ class FileController extends ResponseController
                 'pages' => $pages,
                 'words' => $wordCount,
             ]);
+
+            //chapter wise data
+            // $chapters = preg_split('/Chapter\s+\d+/i', $text);
+
+            //$content_store = $this->getChapter($text,$record);
+            
 
             return $this->sendResponse($record, 'File uploaded successfully.', 200);
 
@@ -83,5 +110,37 @@ class FileController extends ResponseController
         
     }
 
+    private function getChapter($text,$book)
+    {
+        
+        $units = preg_split(
+            '/\b(UNIT\s*[-–—]?\s*(?:[IVX]+|\d+))\b/i',
+            $text,
+            -1,
+            PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
+        );
+        dd($units);
+        $finalUnits = [];
 
+        for ($i = 1; $i < count($units); $i++) {
+            if (!isset($units[$i + 1])) {
+                continue; // skip broken unit
+            }
+
+            $finalUnits[] = [
+                'title' => trim($units[$i]),       // UNIT - I
+                'content' => trim($units[$i + 1]),  // Content of UNIT
+            ];
+        }
+
+        foreach ($finalUnits as $index => $unit) {
+            Chapter::create([
+                'book_id' => $book->id,
+                'chapter_number' => $index + 1,
+                'chapter_title' => $unit['title'],
+                'content' => $unit['content'],
+            ]);
+        }
+
+    }
 }

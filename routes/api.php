@@ -46,6 +46,7 @@ Route::group(['prefix' => 'v1/admin'], function () {
         //***************file functionality************************* */
         Route::post('/file/upload', [FileController::class, 'upload']);
         Route::delete('/delete/file/{id}', [FileController::class, 'destroy']);
+        Route::get('/file', [FileController::class, 'getFile']);
 
 
     });
