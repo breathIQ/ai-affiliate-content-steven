@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Exception;
 use Laravel\Socialite\Facades\Socialite;
+use Config;
 
 class UserAuthController extends ResponseController
 {

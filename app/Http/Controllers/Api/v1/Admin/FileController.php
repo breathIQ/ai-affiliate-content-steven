@@ -119,10 +119,10 @@ class FileController extends ResponseController
             -1,
             PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
         );
-        dd($units);
+        // dd($units);
         $finalUnits = [];
 
-        for ($i = 1; $i < count($units); $i++) {
+        for ($i = 1; $i < count($units); $i +=2) {
             if (!isset($units[$i + 1])) {
                 continue; // skip broken unit
             }
@@ -132,7 +132,7 @@ class FileController extends ResponseController
                 'content' => trim($units[$i + 1]),  // Content of UNIT
             ];
         }
-
+        dd($finalUnits);
         foreach ($finalUnits as $index => $unit) {
             Chapter::create([
                 'book_id' => $book->id,
