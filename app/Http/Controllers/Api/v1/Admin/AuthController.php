@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use App\Mail\VerificationCodeMail;
 use Illuminate\Support\Facades\DB;
 use Exception;
+use Illuminate\Support\Facades\Storage;
 
 class AuthController extends ResponseController
 {
@@ -231,6 +232,56 @@ class AuthController extends ResponseController
                 'error' => $err->getMessage(),
                 'line' => $err->getLine(),
             ], 500);
+        }
+    }
+    public function getProfile(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            if ($user->avatar) {
+                $user->avatar = asset(Storage::url($user->avatar));
+            }
+            return $this->sendResponse($user, 'User profile fetched successfully', 200);
+        } catch (\Exception $e) {
+            return $this->sendError('Something went wrong', [], 500);
+        }
+    }
+
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            ]);
+
+            if ($validator->fails()) {
+                return $this->sendValidationError($validator->errors());
+            }
+
+            $avatarPath = $user->avatar;
+            if ($request->hasFile('avatar')) {
+                // Delete old avatar if exists
+                if ($user->avatar && Storage::disk('public')->exists($user->avatar)) {
+                    Storage::disk('public')->delete($user->avatar);
+                }
+
+                $file = $request->file('avatar');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('uploads/avatars', $filename, 'public');
+                $avatarPath = $path; // Store relative path in DB
+            }
+
+            $user->update([
+                'name' => $request->name,
+                'avatar' => $avatarPath,
+            ]);
+
+            return $this->sendResponse([], 'Profile updated successfully', 200);
+
+        } catch (\Exception $e) {
+            return $this->sendError('Something went wrong', [], 500);
         }
     }
 }

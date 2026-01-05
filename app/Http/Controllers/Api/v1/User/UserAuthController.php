@@ -13,6 +13,7 @@ use Illuminate\Validation\ValidationException;
 use Exception;
 use Laravel\Socialite\Facades\Socialite;
 use Config;
+use Illuminate\Support\Facades\Storage;
 
 class UserAuthController extends ResponseController
 {
@@ -252,5 +253,77 @@ class UserAuthController extends ResponseController
         );
 
         return $this->sendResponse([], 'Account linked successfully', 200);
+    }
+    public function getProfile(Request $request)
+    {
+        try {
+            $user = Auth::user()->load('socialAccounts');
+            
+            $instagram = $user->socialAccounts->where('provider', 'instagram')->first();
+            $tiktok = $user->socialAccounts->where('provider', 'tiktok')->first();
+            
+            $data = [
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
+                'affiliate_id' => $user->affiliate_id ?? '', // Assuming this exists or is username
+                'affiliate_link' => 'https://www.co2book.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
+                'social_accounts' => [
+                    'instagram' => [
+                        'connected' => (bool)$instagram,
+                        'username' => $instagram ? $instagram->username : null,
+                    ],
+                    'tiktok' => [
+                        'connected' => (bool)$tiktok,
+                        'username' => $tiktok ? $tiktok->username : null,
+                    ]
+                ]
+            ];
+            
+            return $this->sendResponse($data, 'User profile fetched successfully', 200);
+        } catch (\Exception $e) {
+            return $this->sendError('Something went wrong', [], 500);
+        }
+    }
+
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            ]);
+
+            if ($validator->fails()) {
+                return $this->sendValidationError($validator->errors());
+            }
+
+            $avatarPath = $user->avatar;
+            if ($request->hasFile('avatar')) {
+                // Delete old avatar if exists
+                 if ($user->avatar) {
+                    $oldPath = str_replace('/storage/', '', $user->avatar);
+                    if (Storage::disk('public')->exists($oldPath)) {
+                        Storage::disk('public')->delete($oldPath);
+                    }
+                 }
+
+                $file = $request->file('avatar');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('uploads/avatars', $filename, 'public');
+                $avatarPath = '/storage/' . $path;
+            }
+
+            $user->update([
+                'name' => $request->name,
+                'avatar' => $avatarPath,
+            ]);
+
+            return $this->sendResponse([], 'Profile updated successfully', 200);
+
+        } catch (\Exception $e) {
+            return $this->sendError('Something went wrong', [], 500);
+        }
     }
 }

@@ -8,7 +8,7 @@ class Chapter extends Model
 {
     protected $fillable = [
         'book_id',
-        'chapter_number',
+        'chapter',
         'chapter_title',
         'content',
     ];

@@ -32,6 +32,8 @@ Route::group(['prefix' => 'v1/admin'], function () {
         //**************Auth functionaity route**************************** */
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('change-password', [AuthController::class, 'chnagePassword']);
+        Route::get('profile', [AuthController::class, 'getProfile']);
+        Route::post('update-profile', [AuthController::class, 'updateProfile']);
 
 
         //***********User Management************************** */
@@ -69,6 +71,8 @@ Route::group(['prefix' => 'v1/user'], function () {
         Route::post('logout', [UserAuthController::class, 'logout']);
         Route::post('change-password', [UserAuthController::class, 'chnagePassword']);
         Route::post('/social/account/link', [UserAuthController::class, 'link']);
+        Route::get('profile', [UserAuthController::class, 'getProfile']);
+        Route::post('update-profile', [UserAuthController::class, 'updateProfile']);
 
     });
 });

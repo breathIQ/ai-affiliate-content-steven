@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-            $table->unsignedBigInteger('chapter_id');
+            $table->unsignedBigInteger('chapter_id')->nullable();
             $table->foreign('chapter_id')->references('id')->on('chapters')->onDelete('set null');         
             $table->text('caption')->nullable();
             $table->longText('script')->nullable();
@@ -27,6 +27,7 @@ return new class extends Migration
             $table->timestamp('published_at')->nullable();
             $table->enum('media_assets', ['single', 'carousel'])->default('single');
             $table->enum('status', ['draft', 'scheduled', 'published'])->default('draft');
+            $table->string('affiliate_url')->nullable(); 
             $table->timestamps();
         });
     }

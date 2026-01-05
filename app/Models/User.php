@@ -63,4 +63,23 @@ class User extends Authenticatable
     {
         return $this->hasMany(SocialAccount::class);
     }
+
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
+
+    public function affiliateClicks()
+    {
+        return $this->hasManyThrough(
+            AffiliateClick::class,
+            Post::class,
+            'user_id',   // posts.user_id
+            'post_id',   // affiliate_clicks.post_id
+            'id',        // users.id
+            'id'         // posts.id
+        );
+    }
+
+
 }
