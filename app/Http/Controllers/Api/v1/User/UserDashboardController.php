@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Facades\Auth;
-use App\Models\{Chapter,AffiliateClick,Post,Media};
+use App\Models\{Chapter,AffiliateClick,Post,Media,File};
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;  
 use Illuminate\Support\Facades\Storage;
@@ -22,12 +22,15 @@ class UserDashboardController extends ResponseController
 
             // Stats Cards
             $postsGenerated = $user->posts()->count();
-            $draftPosts = $user->posts()->where('status', 'draft')->count(); // Assuming status column
-            $scheduledPosts = $user->posts()->where('status', 'scheduled')->count();
-            $affiliateClicks = $user->affiliateClicks()->count();
+            //$draftPosts = $user->posts()->where('status', 'draft')->count(); // Assuming status column
+            //$scheduledPosts = $user->posts()->where('status', 'scheduled')->count();
+            $affiliateClicks = $user->posts()->sum('total_clicks');
 
             // This Month Stats
-            $monthlyClicks = $user->affiliateClicks()->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])->count();
+            $monthlyClicks = $user->posts()
+                ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
+                ->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])
+                ->count();
             $postsPublished = $user->posts()->where('status', 'published')->whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])->count();
             
             // Calc avg clicks per post for manual calc or general avg? 
@@ -71,7 +74,7 @@ class UserDashboardController extends ResponseController
                         'id' => $post->id,
                         'media' => $mediaUrl, 
                         'post_content' => Str::limit($post->caption ?? $post->script, 50), // Use caption or script as content
-                        'chapter_name' => $post->chapter->name ?? $post->chapter->chapter_title ?? 'N/A',
+                        'chapter_name' => $post->chapter->chapter ?? $post->chapter->chapter_title ?? 'N/A',
                         'hashtags_count' => $hashtagsCount,
                         'ai_generated' => true, 
                         'ai_model' => $post->ai_model,
@@ -80,11 +83,15 @@ class UserDashboardController extends ResponseController
                     ];
                 });
 
+            //Book URL
+            $file = File::first();
+            $book_url = $file ? asset(Storage::url($file->file_path)) : null;
+
             $data = [
                 'stats' => [
                     'generated' => $postsGenerated,
-                    'drafts' => $draftPosts,
-                    'scheduled' => $scheduledPosts,
+                    //'drafts' => $draftPosts,
+                    //'scheduled' => $scheduledPosts,
                     'total_clicks' => $affiliateClicks,
                 ],
                 'month_stats' => [
@@ -93,6 +100,7 @@ class UserDashboardController extends ResponseController
                     'avg_clicks_per_post' => $avgClicksPerPost,
                     'clicks_graph' => $clicksGraph
                 ],
+                'book_url' => $book_url,
                 'recent_posts' => $recentPosts,
                 'social_accounts_status' => [
                      'instagram' => $user->socialAccounts()->where('provider', 'instagram')->exists(),

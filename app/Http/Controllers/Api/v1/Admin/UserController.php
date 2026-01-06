@@ -47,7 +47,7 @@ class UserController extends ResponseController
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
+                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png')),
                 'affiliate_id' => $user->affiliate_id,
                 'posts_generated' => $user->posts_count,
                 'posts_published' => $user->published_posts_count,
@@ -75,7 +75,7 @@ class UserController extends ResponseController
             $user_data['affiliate_id'] =  $user->affiliate_id;
             $user_data['email'] =  $user->email;
             $user_data['status'] =  $user->status;
-            $user_data['image'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : null;
+            $user_data['avatar'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png'));
             
 
             return $this->sendResponse($user_data, 'user data get successfully.', 200);

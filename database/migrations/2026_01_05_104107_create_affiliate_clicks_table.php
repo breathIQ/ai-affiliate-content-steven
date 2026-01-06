@@ -18,6 +18,8 @@ return new class extends Migration
             $table->string('ip_address', 45)->nullable(); // IPv4 / IPv6
             $table->string('user_agent')->nullable();
             $table->string('referrer')->nullable();
+            $table->string('platform')->nullable();
+            $table->string('device')->nullable();
             $table->timestamps();
         });
     }

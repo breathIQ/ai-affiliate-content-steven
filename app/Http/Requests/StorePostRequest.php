@@ -25,7 +25,7 @@ class StorePostRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'chapter_id' => 'nullable|exists:id,chapters',
+            'chapter_id' => 'nullable|exists:chapters,id',
             'caption' => 'nullable|string',
             'script' => 'nullable|string',
 
@@ -46,7 +46,9 @@ class StorePostRequest extends FormRequest
             'hashtags.*' => 'string|max:50',
 
             'platforms' => 'nullable|array',
-            'platforms.*' => 'in:instagram,tiktok'
+            'platforms.*' => 'in:instagram,tiktok',
+
+            'affiliate_url' => 'required|string',
         ];
     }
 

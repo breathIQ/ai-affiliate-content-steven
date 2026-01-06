@@ -31,8 +31,9 @@ class UserAuthController extends ResponseController
         try {
             $userRole = Role::where('role', 'User')->first();
             
+            
             // Generate affiliate_id from name
-            $affiliateId = Str::slug($request->name, '');
+            $affiliateId = $this->generateUniqueAffiliateId($request->name);
             
             $user = User::create([
                 'name' => $request->name,
@@ -271,7 +272,7 @@ class UserAuthController extends ResponseController
             $data = [
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
+                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png')),
                 'affiliate_id' => $user->affiliate_id ?? '', // Assuming this exists or is username
                 'affiliate_link' => 'https://www.co2book.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
                 'social_accounts' => [
@@ -340,5 +341,19 @@ class UserAuthController extends ResponseController
         } catch (\Exception $e) {
             return $this->sendError('Something went wrong', [], 500);
         }
+    }
+
+    private function generateUniqueAffiliateId($name)
+    {
+        $slug = Str::slug($name, '');
+        $originalSlug = $slug;
+        $count = 1;
+
+        while (User::where('affiliate_id', $slug)->exists()) {
+            $slug = $originalSlug . $count;
+            $count++;
+        }
+
+        return $slug;
     }
 }

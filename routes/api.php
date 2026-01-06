@@ -6,7 +6,7 @@ use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController,AffiliateController,
 FileController};
-use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController};
+use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController};
 
 
 // Route::get('/user', function (Request $request) {
@@ -17,6 +17,9 @@ use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController
 Route::group(['prefix' => 'v1'], function () {
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
+
+    //*****************Invite Affiliates ************************** */
+    Route::post('/affiliate/invite', [AffiliateController::class, 'sendAffiliateInvite']);
 });
 
 //****************************Admin Route **************************************** */
@@ -42,8 +45,6 @@ Route::group(['prefix' => 'v1/admin'], function () {
         Route::post('update-status/{id}', [UserController::class, 'updateUserStatus']);
         // Route::post('update-status/{id}', [UserController::class, 'updateUserActiveStatus']);
 
-        //*****************Invite Affiliates ************************** */
-        Route::post('/affiliate/invite', [AffiliateController::class, 'sendAffiliateInvite']);
 
         //***************file functionality************************* */
         Route::post('/file/upload', [FileController::class, 'upload']);
@@ -62,6 +63,7 @@ Route::group(['prefix' => 'v1/user'], function () {
     Route::post('/login', [UserAuthController::class, 'login']);
     Route::post('/social-login', [UserAuthController::class, 'socialLogin']);
     Route::get('/get-chapter', [UserDashboardController::class, 'getChapter']);
+    Route::get('/affiliate-click/{post_id}/{affiliate_id}', [AffiliateClickController::class, 'track']);
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
 

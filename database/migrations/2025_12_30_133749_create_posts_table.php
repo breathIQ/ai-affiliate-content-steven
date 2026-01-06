@@ -21,7 +21,7 @@ return new class extends Migration
             $table->longText('script')->nullable();
             $table->text('hastag')->nullable();
             $table->string('ai_model')->nullable();         
-            $table->json('ai_prompt')->nullable();            // prompt, etc
+            $table->longText('ai_prompt')->nullable();            // prompt, etc
             $table->integer('total_clicks')->default(0);
             $table->timestamp('scheduled_at')->nullable();
             $table->timestamp('published_at')->nullable();

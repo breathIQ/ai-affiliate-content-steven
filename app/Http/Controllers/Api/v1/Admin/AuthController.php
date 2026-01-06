@@ -238,9 +238,7 @@ class AuthController extends ResponseController
     {
         try {
             $user = Auth::user();
-            if ($user->avatar) {
-                $user->avatar = asset(Storage::url($user->avatar));
-            }
+            $user->avatar = isset($user->avatar) ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png'));
             return $this->sendResponse($user, 'User profile fetched successfully', 200);
         } catch (\Exception $e) {
             return $this->sendError('Something went wrong', [], 500);

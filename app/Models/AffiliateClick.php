@@ -11,6 +11,9 @@ class AffiliateClick extends Model
         'ip_address',
         'user_agent',
         'referrer',
+        'platform',
+        'device',
+        
     ];  
 
     public function post()

@@ -11,6 +11,8 @@ use App\Models\{PostPlatform,PostMedia,Post,Chapter};
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use App\Services\SocialTokenService;
 
 class PostController extends ResponseController
 {
@@ -175,7 +177,7 @@ class PostController extends ResponseController
     public function store(StorePostRequest $request)
     {
         $user = Auth::user();
-        return DB::transaction(function () use ($request) {
+        return DB::transaction(function () use ($request,$user) {
 
             // 1. Create Post
             $post = Post::create([
@@ -187,41 +189,48 @@ class PostController extends ResponseController
                 'status'       => $request->status,
                 'ai_model'     => $request->ai_model,
                 'ai_prompt'     => $request->ai_prompt,
-                'scheduled_at'=> $request->scheduled_at ?? null,
+                // 'scheduled_at'=> $request->scheduled_at ?? null,
                 'published_at'=> $request->status === 'published' ? now() : null,
                 'hastag' => $request->hashtags ? implode(',',$request->hashtags) : null,
+                'affiliate_url' => $request->affiliate_url,
             ]);
 
             // 2. Media (File Upload)
-            if ($request->hasFile('media')) {
+            if ($request->input('media')) {
+                foreach ($request->input('media') as $index => $mediaItem) {
 
-                foreach ($request->file('media') as $index => $file) {
+                    // Check if this file exists in the request
+                    if ($request->hasFile("media.$index.file")) {
 
-                    if (!$file->isValid()) {
-                        continue;
+                        $uploadedFile = $request->file("media.$index.file");
+
+                        if (!$uploadedFile->isValid()) {
+                            continue; // skip invalid files
+                        }
+
+                        // Detect media type
+                        $mime = $uploadedFile->getMimeType();
+                        $mediaType = str_starts_with($mime, 'image/')
+                            ? 'image'
+                            : (str_starts_with($mime, 'video/') ? 'video' : null);
+
+                        if (!$mediaType) {
+                            continue; // skip unsupported files
+                        }
+
+                        // Store file
+                        $path = $uploadedFile->store('posts/media', 'public');
+
+                        // Create media record
+                        $post->media()->create([
+                            'media_type'  => $mediaType,
+                            'media_path'  => $path,
+                            'media_order' => $mediaItem['media_order'] ?? 0,
+                        ]);
                     }
-
-                    // Detect media type
-                    $mime = $file->getMimeType();
-
-                    $mediaType = str_starts_with($mime, 'image/')
-                        ? 'image'
-                        : (str_starts_with($mime, 'video/') ? 'video' : null);
-
-                    if (!$mediaType) {
-                        continue; // skip unsupported file
-                    }
-
-                    $path = $file->store('posts/media', 'public');
-
-                    $post->media()->create([
-                        'post_id' => $post->id,
-                        'media_type'  => $mediaType,
-                        'media_path'  => $path,
-                        'media_order' => $index + 1,
-                    ]);
                 }
             }
+
 
             // 3. Platforms (Publish Selection)
             if ($request->filled('platforms')) {
@@ -237,5 +246,24 @@ class PostController extends ResponseController
             return $this->sendResponse($post, 'Post created successfully', 201);
             
         });
+    }
+
+
+    public function publishToTikTok(Post $post, SocialTokenService $tokenService)
+    {
+        $account = auth()->user()->socialAccounts()->where('platform', 'tiktok')->first();
+
+        try {
+            $validToken = $tokenService->getValidToken($account);
+            
+            // Use $validToken to upload video/post to TikTok
+            $response = Http::withToken($validToken)
+                ->post('https://open.tiktokapis.com/v2/post/publish/video/init/', [
+                    // TikTok specific payload
+                ]);
+
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to publish to TikTok', ['error' => $e->getMessage()], 500);
+        }
     }
 }
