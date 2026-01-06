@@ -14,6 +14,7 @@ use Exception;
 use Laravel\Socialite\Facades\Socialite;
 use Config;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class UserAuthController extends ResponseController
 {
@@ -29,11 +30,16 @@ class UserAuthController extends ResponseController
         }
         try {
             $userRole = Role::where('role', 'User')->first();
+            
+            // Generate affiliate_id from name
+            $affiliateId = Str::slug($request->name, '');
+            
             $user = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'role_id' => $userRole->id ?? 2,
+                'affiliate_id' => $affiliateId,
                 'joined_by' => 'Email',
                 'status' => Config::get('constant.status.Active'),
             ]);
@@ -312,7 +318,7 @@ class UserAuthController extends ResponseController
                 $file = $request->file('avatar');
                 $filename = time() . '_' . $file->getClientOriginalName();
                 $path = $file->storeAs('uploads/avatars', $filename, 'public');
-                $avatarPath = '/storage/' . $path;
+                $avatarPath =  $path;
             }
 
             $user->update([
@@ -322,6 +328,15 @@ class UserAuthController extends ResponseController
 
             return $this->sendResponse([], 'Profile updated successfully', 200);
 
+        } catch (\Exception $e) {
+            return $this->sendError('Something went wrong', [], 500);
+        }
+    }
+    public function getSocialAccounts(Request $request)
+    {
+        try {
+            $user = Auth::user()->load('socialAccounts');
+            return $this->sendResponse($user->socialAccounts, 'User social accounts fetched successfully', 200);
         } catch (\Exception $e) {
             return $this->sendError('Something went wrong', [], 500);
         }

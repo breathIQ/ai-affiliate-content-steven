@@ -6,7 +6,7 @@ use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController,AffiliateController,
 FileController};
-use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController};
+use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController};
 
 
 // Route::get('/user', function (Request $request) {
@@ -67,10 +67,14 @@ Route::group(['prefix' => 'v1/user'], function () {
 
         Route::get('dashboard', [UserDashboardController::class, 'getDashboardData']);
 
+        // Posts
+        Route::apiResource('/posts', PostController::class);
+
         //**************Auth functionaity route**************************** */
         Route::post('logout', [UserAuthController::class, 'logout']);
         Route::post('change-password', [UserAuthController::class, 'chnagePassword']);
         Route::post('/social/account/link', [UserAuthController::class, 'link']);
+        Route::get('/social/accounts', [UserAuthController::class, 'getSocialAccounts']);
         Route::get('profile', [UserAuthController::class, 'getProfile']);
         Route::post('update-profile', [UserAuthController::class, 'updateProfile']);
 

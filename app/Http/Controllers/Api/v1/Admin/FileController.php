@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\{File,Chapter};
 use Smalot\PdfParser\Parser;
 use Illuminate\Support\Facades\Storage;
+use App\Jobs\ProcessPdfChaptersJob;
+use Illuminate\Support\Facades\Log;
 
 class FileController extends ResponseController
 {
@@ -47,40 +49,19 @@ class FileController extends ResponseController
                 'original_name' => $file->getClientOriginalName(),
                 'file_path' => $path,
                 'mime_type' => $file->getClientMimeType(),
-                'status' => 1, 
+                'status' => 1, // Pending
             ]);
 
-            $parser = new Parser();
-            $pdfPath = Storage::disk('public')->path($record->file_path);
-            $pdf = $parser->parseFile($pdfPath);
-            // Get text
-            $text = $pdf->getText();
+            //only for testing file chapter extraction result
+            // $parser = new Parser();
+            // $pdfPath = Storage::disk('public')->path($record->file_path);
+            // $pdf = $parser->parseFile($pdfPath);
+            // $content_store = $this->storeChapter($pdf,$record);
 
-            // Fix hyphenated line breaks
-            $text = preg_replace("/-\s*\n\s*/", "", $text);
+            // Dispatch Job
+            ProcessPdfChaptersJob::dispatch($record->id);
 
-            // Normalize whitespace
-            $text = preg_replace('/\s+/', ' ', $text);
-
-            // Unicode-safe word count
-            $wordCount = preg_match_all('/\p{L}+/u', $text);
-
-            // Page count
-            $pages = count($pdf->getPages());
-            // dd($pages,$wordCount,$text);
-            // Update file record
-            $record->update([
-                'pages' => $pages,
-                'words' => $wordCount,
-            ]);
-
-            //chapter wise data
-            // $chapters = preg_split('/Chapter\s+\d+/i', $text);
-
-            $content_store = $this->storeChapter($text,$record);
-            
-
-            return $this->sendResponse($record, 'File uploaded successfully.', 200);
+            return $this->sendResponse($record, 'File uploaded. Processing started in background.', 200);
 
         } catch (\Exception $e) {
             return $this->sendError('File upload failed.', ['error' => $e->getMessage()], 500);
@@ -110,38 +91,115 @@ class FileController extends ResponseController
         
     }
 
-    private function storeChapter($text,$book)
+
+    /**
+     * Helper to remove the header lines from the start of the first page of a chapter
+     */
+    // private function excludeHeaderLines($text, $toRemove)
+    // {
+    //     foreach ($toRemove as $line) {
+    //         if (!$line) continue;
+    //         $text = str_replace($line, "", $text);
+    //     }
+    //     return trim($text);
+    // }
+
+    protected function cleanText($text)
     {
-        
-        $units = preg_split(
-            '/\b(UNIT\s*[-–—]?\s*(?:[IVX]+|\d+))\b/i',
-            $text,
-            -1,
-            PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
-        );
-        // dd($units);
-        $finalUnits = [];
-
-        for ($i = 1; $i < count($units); $i +=2) {
-            if (!isset($units[$i + 1])) {
-                continue; // skip broken unit
-            }
-
-            $finalUnits[] = [
-                'title' => trim($units[$i]),       // UNIT - I
-                'content' => trim($units[$i + 1]),  // Content of UNIT
-            ];
-        }
-        // dd($finalUnits);
-        foreach ($finalUnits as $index => $unit) {
-            Chapter::create([
-                'book_id' => $book->id,
-                'chapter_number' => $index + 1,
-                'chapter_title' => $unit['title'],
-                'content' => $unit['content'],
-            ]);
-        }
-
+        // Remove multiple newlines and common PDF artifacts like page numbers at the bottom
+        return preg_replace('/\n\s*\d+\s*\n/', "\n", $text);
     }
 
+    // private function storeChapter($pdf, $book)
+    // {
+    //     $pages = $pdf->getPages();
+    //     $tempChapters = [];
+    //     $currentChapterHeader = null;
+    //     $currentChapterTitle = null;
+    //     $currentContent = "";
+        
+    //     $chapterPattern = '/^(?:CHAPTER|UNIT|LESSON)\s+([0-9IVX]+)/i';
+
+    //     foreach ($pages as $page) {
+    //         $pageText = $page->getText();
+            
+    //         // --- STEP 1: STRICT TOC SKIP ---
+    //         // If the page contains "Contents" or "Table of Contents", skip processing it
+    //         if (preg_match('/contents|table\s+of\s+contents/i', $pageText)) {
+    //             continue;
+    //         }
+
+    //         $lines = explode("\n", trim($pageText));
+    //         $foundNewChapter = false;
+    //         $tempHeader = null;
+    //         $tempTitle = null;
+
+    //         foreach ($lines as $index => $line) {
+    //             // Log::info("Line: " . $line);
+    //             $trimmedLine = trim($line);
+    //             if ($trimmedLine === '' || is_numeric($trimmedLine)) continue;
+
+    //             if (preg_match($chapterPattern, $trimmedLine)) {
+    //                 $foundNewChapter = true;
+    //                 $tempHeader = $trimmedLine;
+                    
+    //                 for ($j = $index + 1; $j < count($lines); $j++) {
+    //                     if (trim($lines[$j]) !== '') {
+    //                         $tempTitle = trim($lines[$j]);
+    //                         break;
+    //                     }
+    //                 }
+    //                 break;
+    //             }
+    //             if ($index > 5) break; 
+    //         }
+    //         // Log::info("Found New Chapter: " . $foundNewChapter);
+    //         if ($foundNewChapter) {
+    //             if ($currentChapterHeader) {
+    //                 $tempChapters[] = [
+    //                     'chapter' => $currentChapterHeader,
+    //                     'title'   => $currentChapterTitle,
+    //                     'content' => trim($currentContent)
+    //                 ];
+    //             }
+    //             $currentChapterHeader = $tempHeader;
+    //             $currentChapterTitle = $tempTitle;
+    //             $currentContent = $this->excludeHeaderLines($pageText, [$tempHeader, $tempTitle]);
+    //         } else {
+    //             if ($currentChapterHeader) {
+    //                 $currentContent .= "\n" . $pageText;
+    //             }
+    //         }
+    //     }
+
+    //     // Capture the last chapter
+    //     if ($currentChapterHeader) {
+    //         $tempChapters[] = [
+    //             'chapter' => $currentChapterHeader,
+    //             'title'   => $currentChapterTitle,
+    //             'content' => trim($currentContent)
+    //         ];
+    //     }
+
+
+    //     // We only keep Main chapters that have a significant amount of text like Chapter 1.
+    //     // TOC items usually only have a more characters of "Chapter1--abcdefr zdfsaf" 
+        
+    //     $finalChapters = array_filter($tempChapters, function($ch) {
+    //         return strlen($ch['chapter']) < 15; // Adjust 15 based on your PDF's density
+    //     });
+
+    //     // dd($finalChapters);
+    //     foreach ($finalChapters as $data) {
+    //         Chapter::create([
+    //             'book_id'       => $book->id,
+    //             'chapter'       => $data['chapter'],
+    //             'chapter_title' => $this->cleanText($data['title']),
+    //             'content'       => $this->cleanText($data['content']),
+               
+    //         ]);
+    //     }
+
+    //     return count($finalChapters);
+    // }
 }

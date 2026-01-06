@@ -27,4 +27,13 @@ class Post extends Model
         return $this->hasMany(AffiliateClick::class);
     }
 
+    public function chapter()
+    {
+        return $this->belongsTo(Chapter::class);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }
