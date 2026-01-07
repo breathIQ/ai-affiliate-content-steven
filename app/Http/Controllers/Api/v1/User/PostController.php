@@ -174,10 +174,10 @@ class PostController extends ResponseController
         }
     }
 
-    public function store(StorePostRequest $request)
+    public function store(StorePostRequest $request, PostPublisherService $postPublisherService)
     {
         $user = Auth::user();
-        return DB::transaction(function () use ($request,$user) {
+        return DB::transaction(function () use ($request,$user,$postPublisherService) {
 
             // 1. Create Post
             $post = Post::create([
@@ -191,7 +191,7 @@ class PostController extends ResponseController
                 'ai_prompt'     => $request->ai_prompt,
                 // 'scheduled_at'=> $request->scheduled_at ?? null,
                 'published_at'=> $request->status === 'published' ? now() : null,
-                'hastag' => $request->hashtags ? implode(',',$request->hashtags) : null,
+                'hastag' => $request->hashtags,
                 'affiliate_url' => $request->affiliate_url,
             ]);
 
@@ -243,6 +243,8 @@ class PostController extends ResponseController
                 }
             }
 
+            $postPublisherService->publishPost($post);
+            
             return $this->sendResponse($post, 'Post created successfully', 201);
             
         });

@@ -42,8 +42,7 @@ class StorePostRequest extends FormRequest
             'media.*.file' => 'required|file|mimes:jpg,jpeg,png,gif,mp4,mov,avi,webm|max:51200',
             'media.*.media_order' => 'required|integer',
 
-            'hashtags' => 'nullable|array',
-            'hashtags.*' => 'string|max:50',
+            'hashtags' => 'nullable|string',
 
             'platforms' => 'nullable|array',
             'platforms.*' => 'in:instagram,tiktok',

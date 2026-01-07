@@ -27,7 +27,7 @@ return new class extends Migration
             $table->timestamp('published_at')->nullable();
             $table->enum('media_assets', ['single', 'carousel'])->default('single');
             $table->enum('status', ['draft', 'scheduled', 'published'])->default('draft');
-            $table->string('affiliate_url')->nullable(); 
+            $table->text('affiliate_url')->nullable(); 
             $table->timestamps();
         });
     }

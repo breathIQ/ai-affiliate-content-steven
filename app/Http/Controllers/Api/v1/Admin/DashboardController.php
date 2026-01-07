@@ -197,10 +197,24 @@ class DashboardController extends ResponseController
                     'label' =>  preg_replace('/^CHAPTER\s+/i', 'Ch-', $item->chapter),
                     'data' => [
                         'posts_count' => $item->posts_count, 
-                        'clicks_count' => $item->clicks_count, 
-                        'avg_clicks' => $avg_clicks * 5 // Scaled for visibility
+                        'clicks_count' => (int)$item->clicks_count, 
+                        'avg_clicks' => round($avg_clicks, 2) // Scaled for visibility
                     ],
                 ];
             });
+    }
+
+    public function getMostUsedChapter(Request $request)
+    {
+        $dataBY = $request->query('filter_by', 'month');
+
+        if ($dataBY === 'week') {
+            $data = $this->mostUsedChapters(now()->subWeek(), now());
+           
+        } else {
+            $data = $this->mostUsedChapters(now()->subMonth(), now());
+        }
+
+        return $this->sendResponse(['most_used_chapters' =>$data],'Most Used Chapters by ' . $dataBY,200);
     }
 }

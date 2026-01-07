@@ -5,8 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController,AffiliateController,
-FileController};
-use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController};
+    FileController};
+use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController,
+    AiPostGenerationController};
 
 
 // Route::get('/user', function (Request $request) {
@@ -30,7 +31,9 @@ Route::group(['prefix' => 'v1/admin'], function () {
 
     Route::group(['middleware' => ['auth:sanctum', AdminMiddleware::class]], function () {
 
+        //*****************Dashboard************************** */
         Route::get('dashboard', [DashboardController::class, 'getDashboardData']);
+        Route::get('most-used-chapter', [DashboardController::class, 'getMostUsedChapter']);
 
         //**************Auth functionaity route**************************** */
         Route::post('logout', [AuthController::class, 'logout']);
@@ -69,10 +72,15 @@ Route::group(['prefix' => 'v1/user'], function () {
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
 
+        //*****************Dashboard************************** */
         Route::get('dashboard', [UserDashboardController::class, 'getDashboardData']);
+        
 
-        // Posts
+        //*****************Posts************************** */
         Route::apiResource('/posts', PostController::class);
+
+        //*****************Ai Post Generation************************** */
+        Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent']);
 
         //**************Auth functionaity route**************************** */
         Route::post('logout', [UserAuthController::class, 'logout']);
@@ -81,6 +89,9 @@ Route::group(['prefix' => 'v1/user'], function () {
         Route::get('/social/accounts', [UserAuthController::class, 'getSocialAccounts']);
         Route::get('profile', [UserAuthController::class, 'getProfile']);
         Route::post('update-profile', [UserAuthController::class, 'updateProfile']);
+
+        //******************Ai Post Generation Route************************************ */
+        Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent']);
 
     });
 });

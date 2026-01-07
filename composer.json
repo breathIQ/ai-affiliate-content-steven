@@ -11,6 +11,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.24",
         "laravel/tinker": "^2.10.1",
+        "openai-php/laravel": "^0.18.0",
         "smalot/pdfparser": "^2.12",
         "socialiteproviders/instagram": "^5.1",
         "socialiteproviders/tiktok": "^5.2"
