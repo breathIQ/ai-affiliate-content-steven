@@ -41,7 +41,7 @@ class AffiliateInviteMail extends Mailable
         return new Content(
             view: 'mail.affiliate-invite',
             with: [
-                'inviteUrl' => url('/admin') . '/register?token=' . $this->invite->token,
+                'inviteUrl' => 'http://localhost:3000/signup?token=' . $this->invite->token,
             ],
         );
     }

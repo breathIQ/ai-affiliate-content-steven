@@ -44,6 +44,8 @@ Route::group(['prefix' => 'v1/admin'], function () {
         Route::get('user-request', [UserController::class, 'getUserRequest']);
         Route::post('update-status/{id}', [UserController::class, 'updateUserStatus']);
         // Route::post('update-status/{id}', [UserController::class, 'updateUserActiveStatus']);
+        Route::get('user/{id}/posts', [UserController::class, 'getUserPosts']);
+        Route::get('post/{postId}', [UserController::class, 'getPostDetail']);
 
 
         //***************file functionality************************* */

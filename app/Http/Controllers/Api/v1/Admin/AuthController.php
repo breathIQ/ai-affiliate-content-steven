@@ -141,7 +141,7 @@ class AuthController extends ResponseController
             }
 
             // Generate a unique verification code
-            $verificationCode = Str::random(6);  // You can use any desired length for the code
+            $verificationCode = random_int(100000, 999999);  // Numeric 6-digit verification code
 
             // Store verification code in the database or cache with expiration
             
