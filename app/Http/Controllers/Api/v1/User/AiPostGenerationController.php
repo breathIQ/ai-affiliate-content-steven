@@ -48,7 +48,7 @@ class AiPostGenerationController extends ResponseController
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = "You are an expert social media content creator. 
         Based on the chapter content '{$chapter->content}', generate a high-quality post.
-        You MUST respond ONLY in JSON format with the following keys:
+        You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values.
         'script': A short video script.
@@ -96,7 +96,7 @@ class AiPostGenerationController extends ResponseController
         // System Instruction for structured output like your UI
         $systemInstruction = "You are an expert social media content creator. 
         Based on the chapter content '{$chapter->content}', generate a high-quality post.
-        You MUST respond ONLY in valid JSON format with these exact keys:
+        You MUST respond ONLY in valid JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations, with these exact keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values.
         'script': A short video script.

@@ -23,7 +23,15 @@ class UserAuthController extends ResponseController
         $validator = Validator::make($request->all(), [
             'name' => 'required|string',
             'email' => 'required|email|unique:users',
-            'password' => 'required|string|min:6|confirmed',
+            'password' => [
+                'required',
+                'string',
+                'min:6',
+                'confirmed',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/'
+            ],
+        ],[
+            'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.',
         ]);
         if ($validator->fails()) {
             return $this->sendValidationError($validator->errors());
@@ -82,7 +90,7 @@ class UserAuthController extends ResponseController
             }
 
             // Check if account is inactive
-            if ($user->status == 0) {
+            if ($user->status == 0 || $user->status == 2) {
                 return $this->sendError(
                     'Your account is inactive. Please contact admin.',
                     [],

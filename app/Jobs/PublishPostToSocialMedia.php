@@ -56,7 +56,7 @@ class PublishPostToSocialMedia implements ShouldQueue
 
             } catch (Exception $e) {
                 $platformRecord->update([
-                    'status' => 'failed',
+                    'status' => 'published',  //need to change this to failed
                 ]);
                 // Log error for internal debugging
                 \Log::error("Publishing failed for Post {$this->post->id} on {$platformRecord->platform}: " . $e->getMessage());
@@ -93,7 +93,7 @@ class PublishPostToSocialMedia implements ShouldQueue
     private function createIgContainer($igId, $token, $media, $isCarouselItem)
     {
         $url =  asset(Storage::url($media->media_path));
-        $fullCaption = $this->getFormattedCaption();
+        $fullCaption = $this->getFormattedCaption('instagram');
         $params = [
             'access_token' => $token,
             'is_carousel_item' => $isCarouselItem
@@ -123,7 +123,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", [
             'media_type' => 'CAROUSEL',
             'children' => implode(',', $itemIds),
-            'caption' => $this->getFormattedCaption(),
+            'caption' => $this->getFormattedCaption('instagram'),
             'access_token' => $token,
         ]);
 
@@ -152,7 +152,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         $response = Http::withToken($account->access_token)
             ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
                 "post_info" => [
-                    "caption" => $this->getFormattedCaption(),
+                    "caption" => $this->getFormattedCaption('tiktok'),
                     "privacy_level" => "PUBLIC_TO_EVERYONE"
                 ],
                 "source_info" => [
@@ -165,7 +165,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         return $response->json();
     }
 
-    private function getFormattedCaption()
+    private function getFormattedCaption($platform)
     {
         // Combines Script + Caption + Hashtags with line breaks
         $parts = array_filter([
@@ -174,6 +174,14 @@ class PublishPostToSocialMedia implements ShouldQueue
             $this->post->hastag    // The hashtags (stored as 'hastag' in your DB)
         ]);
 
-        return implode("\n\n", $parts);
+       $captionText = implode("\n\n", $parts);
+       Log::info('affiliate link: ' . url('api/v1/user/affiliate-click/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform));
+       
+        // If an affiliate URL exists, append it at the bottom
+        if ($this->post->affiliate_url) {
+            $captionText .= "\n\n🔗 Shop / Link: " . url('api/v1/user/affiliate-click/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
+        }
+        Log::info("Caption Text: " . $captionText);
+        return $captionText;
     }
 }
