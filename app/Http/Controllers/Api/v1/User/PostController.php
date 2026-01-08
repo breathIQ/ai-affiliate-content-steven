@@ -242,7 +242,7 @@ class PostController extends ResponseController
                     PostPlatform::create([
                         'post_id' => $post->id,
                         'platform' => $platform,
-                        'status' => 'pending'
+                        'status' => 'published'   // need to change this to pending
                     ]);
                 }
             }
