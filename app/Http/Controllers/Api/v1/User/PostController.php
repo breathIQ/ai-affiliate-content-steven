@@ -176,10 +176,10 @@ class PostController extends ResponseController
         }
     }
 
-    public function store(StorePostRequest $request, PostPublisherService $postPublisherService)
+    public function store(StorePostRequest $request)
     {
         $user = Auth::user();
-        return DB::transaction(function () use ($request,$user,$postPublisherService) {
+        return DB::transaction(function () use ($request,$user) {
 
             // 1. Create Post
             $post = Post::create([
@@ -245,7 +245,7 @@ class PostController extends ResponseController
                 }
             }
 
-            $postPublisherService->publishPost($post);
+            // $postPublisherService->publishPost($post);
             
             return $this->sendResponse($post, 'Post created successfully', 201);
             
