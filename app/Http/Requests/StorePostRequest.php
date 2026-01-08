@@ -44,7 +44,7 @@ class StorePostRequest extends FormRequest
 
             'hashtags' => 'nullable|string',
 
-            'platforms' => 'nullable|array',
+            'platforms' => 'required|array',
             'platforms.*' => 'in:instagram,tiktok',
 
             'affiliate_url' => 'required|string',

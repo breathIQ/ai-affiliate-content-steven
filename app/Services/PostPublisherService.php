@@ -10,40 +10,48 @@ class PostPublisherService
     public function publishPost($post)
     {
         $authUser = Auth::user();
-        $account = $authUser->socialAccounts()->where('platform', 'instagram')->first();
-
-        if (!$account) return $this->sendError('Account not linked', [], 403);
-
-        $accessToken = $account->access_token;
-        $igUserId = $account->social_id;
-        $isCarousel = $post->media_assets === 'Carousel'; // Based on your UI toggle
+        $published_platforms = $post->platforms()->where('status', 'pending')->pluck('platform')->toArray();
+        if($published_platforms){
+            foreach($published_platforms as $platform){
+                $account = $authUser->socialAccounts()->where('platform', $platform)->first();
+                if (!$account) return $this->sendError('Account not linked', [], 403);
+                $accessToken = $account->access_token;
+                $igUserId = $account->social_id;
+                
+                 $isCarousel = $post->media_assets === 'Carousel'; // Based on your UI toggle
         
-        try {
-            if ($isCarousel) {
-                // Carousel Logic
-                $mediaFiles = $post->media; // Array of files
-                $itemIds = [];
+                try {
+                    if ($isCarousel) {
+                        // Carousel Logic
+                        $mediaFiles = $post->media; // Array of files
+                        $itemIds = [];
 
-                foreach ($mediaFiles as $file) {
-                    $url = $this->uploadToPublicStorage($file);
-                    // Har image ka item container banayein (is-carousel-item = true)
-                    $itemIds[] = $this->createInstagramItemContainer($igUserId, $accessToken, $url);
+                        foreach ($mediaFiles as $file) {
+                            $url = $this->uploadToPublicStorage($file);
+                            // Har image ka item container banayein (is-carousel-item = true)
+                            $itemIds[] = $this->createInstagramItemContainer($igUserId, $accessToken, $url);
+                        }
+
+                        // Sabko group karke carousel banayein
+                        $containerId = $this->createCarouselContainer($igUserId, $accessToken, $itemIds, $request->caption);
+                    } else {
+                        // Single Media Logic
+                        $url = $this->uploadToPublicStorage($request->file('file'));
+                        $containerId = $this->createSingleContainer($igUserId, $accessToken, $url, $request->caption);
+                    }
+
+                    // Final Step: Publish
+                    return $this->finalizePublish($igUserId, $accessToken, $containerId);
+
+                } catch (\Exception $e) {
+                    return response()->json(['error' => $e->getMessage()], 500);
                 }
-
-                // Sabko group karke carousel banayein
-                $containerId = $this->createCarouselContainer($igUserId, $accessToken, $itemIds, $request->caption);
-            } else {
-                // Single Media Logic
-                $url = $this->uploadToPublicStorage($request->file('file'));
-                $containerId = $this->createSingleContainer($igUserId, $accessToken, $url, $request->caption);
             }
-
-            // Final Step: Publish
-            return $this->finalizePublish($igUserId, $accessToken, $containerId);
-
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
+        }else{
+            return $this->sendError('Platfrom not found to publish this post', [], 403);
         }
+       
+       
     }
 
     private function createInstagramItemContainer($igUserId, $token, $url) {

@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Services\{SocialTokenService,PostPublisherService};
+use App\Services\{SocialTokenService};
+use App\Jobs\PublishPostToSocialMedia;
 
 class PostController extends ResponseController
 {
@@ -130,6 +131,7 @@ class PostController extends ResponseController
                 'ai_model' => $post->ai_model,
                 'ai_prompt' => $post->ai_prompt,
                 'status' => $post->status,
+                'media_assets' => $post->media_assets,
                 'media' => $formattedMedia,
                 'scheduled_at' => $post->scheduled_at,
                 'published_at' => $post->published_at,
@@ -245,7 +247,8 @@ class PostController extends ResponseController
                 }
             }
 
-            // $postPublisherService->publishPost($post);
+            // Dispatch the Job to the background
+            PublishPostToSocialMedia::dispatch($post);
             
             return $this->sendResponse($post, 'Post created successfully', 201);
             
