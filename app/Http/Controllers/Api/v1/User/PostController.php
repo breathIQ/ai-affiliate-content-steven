@@ -107,27 +107,26 @@ class PostController extends ResponseController
                 ];
             });
 
-            // Parse hashtags
-            $hashtags = [];
-            if ($post->hastag) {
-                $decoded = json_decode($post->hastag, true);
-                if (is_array($decoded)) {
-                    $hashtags = $decoded;
-                } else {
-                    $hashtags = array_map('trim', explode(',', $post->hastag));
-                }
-            }
+            // Published platforms
+            $published_platforms = $post->platforms()->where('status', 'published')->pluck('platform')->toArray();
+            // Total clicks across all platforms
+            $total_clicks = $post->total_clicks;
+            // Clicks per platform
+            $platform_clicks = PostPlatform::where('post_id', $post->id)
+                ->where('status', 'published')
+                ->pluck('clicks', 'platform')
+                ->toArray();
 
             $data = [
                 'id' => $post->id,
                 'chapter' => [
                     'id' => $post->chapter_id,
-                    'title' => $post->chapter->chapter_title ?? $post->chapter->name ?? 'N/A',
-                    'code' => $post->chapter->chapter ?? '',
+                    'chapter_title' => $post->chapter->chapter_title ?? 'N/A',
+                    'chapter' => $post->chapter->chapter ?? '',
                 ],
                 'caption' => $post->caption,
                 'script' => $post->script,
-                'hashtags' => $hashtags,
+                'hashtags' => $post->hastag,
                 'ai_model' => $post->ai_model,
                 'ai_prompt' => $post->ai_prompt,
                 'status' => $post->status,
@@ -135,7 +134,10 @@ class PostController extends ResponseController
                 'scheduled_at' => $post->scheduled_at,
                 'published_at' => $post->published_at,
                 'created_at' => $post->created_at->format('Y-m-d H:i:s'),
-                'affiliate_url' => $post->affiliate_url
+                'affiliate_url' => $post->affiliate_url,
+                'platform_clicks' => $platform_clicks,
+                'total_clicks' => $total_clicks,
+                'published_platforms' => $published_platforms,
             ];
 
             return $this->sendResponse($data, 'Post retrieved successfully', 200);

@@ -87,6 +87,10 @@ class UserDashboardController extends ResponseController
             $file = File::first();
             $book_url = $file ? asset(Storage::url($file->file_path)) : null;
 
+            //Social account
+            $instagram = $user->socialAccounts->where('provider', 'instagram')->first();
+            $tiktok = $user->socialAccounts->where('provider', 'tiktok')->first();
+
             $data = [
                 'stats' => [
                     'generated' => $postsGenerated,
@@ -102,9 +106,16 @@ class UserDashboardController extends ResponseController
                 ],
                 'book_url' => $book_url,
                 'recent_posts' => $recentPosts,
+
                 'social_accounts_status' => [
-                     'instagram' => $user->socialAccounts()->where('provider', 'instagram')->exists(),
-                     'tiktok' => $user->socialAccounts()->where('provider', 'tiktok')->exists()
+                    'instagram' => [
+                        'connected' => (bool)$instagram,
+                        'username' => $instagram ? $instagram->username : null,
+                    ],
+                    'tiktok' => [
+                        'connected' => (bool)$tiktok,
+                        'username' => $tiktok ? $tiktok->username : null,
+                    ]
                 ]
             ];
 

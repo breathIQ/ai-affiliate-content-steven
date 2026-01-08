@@ -90,59 +90,6 @@ class AiPostGenerationController extends ResponseController
         }
     }
 
-    // private function generateWithClaude($model, $prompt,$chapter)
-    // {
-    //     // AI ko specific format sikhane ke liye prompt
-    //     $systemInstruction = "You are an expert social media content creator. 
-    //     Based on the chapter content '{$chapter->content}', generate a high-quality post.
-    //     You MUST respond ONLY in JSON format with the following keys:
-    //     'caption': A catchy caption with emojis.
-    //     'hashtags': A string of 10-15 trending hashtags as comma separated values.
-    //     'script': A short video script.
-    //     'title': A scroll-stopping headline.";
-
-    //     try {
-    //         $response = Http::withHeaders([
-    //                 'x-api-key' => Config::get('constant.claud_keys.key'),
-    //                 'anthropic-version' => '2023-06-01',
-    //                 'content-type' => 'application/json',
-    //             ])->post('https://api.anthropic.com/v1/messages', [
-    //                 'model' => $model,
-    //             'max_tokens' => 1024,
-    //             'messages' => [
-    //                 ['role' => 'system', 'content' => $systemInstruction],
-    //                 ['role' => 'user', 'content' => $prompt]
-    //             ],
-    //         ]);
-
-           
-    //         $rawContent = $response->json()['content'][0]['text'];
-    //         //Error Handling: Check if rawContent is empty
-    //         if (!$rawContent) {
-    //             throw new \Exception("AI returned empty content.");
-    //         }
-    //         dd($rawContent);
-    //         $structuredData = json_decode($rawContent, true);
-    //         if (is_null($structuredData)) {
-    //             // Agar JSON invalid hai toh manually handle karein ya error dein
-    //             throw new \Exception("Invalid JSON format received from AI.");
-    //         }
-    //         return $this->sendResponse([
-    //             'caption' => $structuredData['caption'],
-    //             'hashtags' => $structuredData['hashtags'],
-    //             'script' => $structuredData['script'],
-    //             'title' => $structuredData['title'],
-    //             'model' => $model,
-    //             'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
-    //             'chapter_title' => $chapter->chapter_title,
-    //             'chapter_id' => $chapter->id,
-    //             'ai_prompt' => $prompt,
-    //         ], 'Content generated successfully', 200);
-
-    //     } catch (\Exception $e) {
-    //         return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
-    //     }
-    // }
 
     private function generateWithClaude($model, $prompt, $chapter)
     {
@@ -150,7 +97,10 @@ class AiPostGenerationController extends ResponseController
         $systemInstruction = "You are an expert social media content creator. 
         Based on the chapter content '{$chapter->content}', generate a high-quality post.
         You MUST respond ONLY in valid JSON format with these exact keys:
-        'caption', 'hashtags', 'script', 'title'.";
+        'caption': A catchy caption with emojis.
+        'hashtags': A string of 10-15 trending hashtags as comma separated values.
+        'script': A short video script.
+        'title': A scroll-stopping headline.";
             // dd(Config::get('constant.claud_keys.key'));
         try {
             $response = Http::withHeaders([
@@ -166,6 +116,7 @@ class AiPostGenerationController extends ResponseController
                 ],
             ]);
 
+           
             // 1. Check for API Errors (like 401, 400, 500)
             if ($response->failed()) {
                 $errorData = $response->json();
@@ -182,7 +133,7 @@ class AiPostGenerationController extends ResponseController
 
             $rawContent = $resData['content'][0]['text'];
             $structuredData = json_decode($rawContent, true);
-
+            // dd($structuredData);
             if (is_null($structuredData)) {
                 throw new \Exception("Invalid JSON format received from AI.");
             }
