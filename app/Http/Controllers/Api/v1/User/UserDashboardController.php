@@ -10,6 +10,7 @@ use App\Models\{Chapter,AffiliateClick,Post,Media,File};
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;  
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class UserDashboardController extends ResponseController
 {
@@ -17,8 +18,11 @@ class UserDashboardController extends ResponseController
     {
         try {
             $user = Auth::user();
-            $currentMonthStart = \Carbon\Carbon::now()->startOfMonth();
-            $currentMonthEnd = \Carbon\Carbon::now()->endOfMonth();
+            $currentMonthStart = Carbon::now()->startOfMonth();
+            $currentMonthEnd = Carbon::now()->endOfMonth();
+
+            $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
+            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
             // Stats Cards
             $postsGenerated = $user->posts()->count();
@@ -31,6 +35,25 @@ class UserDashboardController extends ResponseController
                 ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
                 ->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])
                 ->count();
+
+            // Get Last Month Clicks
+            $lastMonthClicks = $user->posts()
+                ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
+                ->whereBetween('affiliate_clicks.created_at', [$lastMonthStart, $lastMonthEnd])
+                ->count();
+
+            // 3. Calculate Growth Rate
+            $growthRate = 0;
+            if ($lastMonthClicks > 0) {
+                $growthRate = (($monthlyClicks - $lastMonthClicks) / $lastMonthClicks) * 100;
+            } elseif ($monthlyClicks > 0) {
+                // If there were 0 clicks last month but some this month, growth is 100%
+                $growthRate = 100;
+            }
+
+            // Round to nearest integer or 1 decimal point
+            $growthRate = round($growthRate, 1);
+
             $postsPublished = $user->posts()->where('status', 'published')->whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])->count();
             
             // Calc avg clicks per post for manual calc or general avg? 
@@ -100,6 +123,7 @@ class UserDashboardController extends ResponseController
                 ],
                 'month_stats' => [
                     'affiliate_clicks' => $monthlyClicks,
+                    'growth_rate' => $growthRate,
                     'posts_published' => $postsPublished,
                     'avg_clicks_per_post' => $avgClicksPerPost,
                     'clicks_graph' => $clicksGraph
