@@ -9,7 +9,7 @@ class Post extends Model
     protected $fillable = [
         'user_id','chapter_id', 'caption', 'script', 'hastag',
         'status', 'scheduled_at', 'ai_model','ai_prompt','total_clicks','published_at','affiliate_url',
-        'media_assets'
+        'media_assets','chapter_name'
     ];
 
     public function media()

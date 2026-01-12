@@ -74,6 +74,12 @@ class AiPostGenerationController extends ResponseController
                 // Agar JSON invalid hai toh manually handle karein ya error dein
                 throw new \Exception("Invalid JSON format received from AI.");
             }
+
+             // --- NEW: Image Generation Step ---
+            // Caption ka use karke ek visual prompt banayein
+            $imagePrompt = "A high-quality social media graphic about: " . $structuredData['title'];            
+            $imageUrl = $this->generateAIImage($imagePrompt);
+
             return $this->sendResponse([
                 'caption' => $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'],
@@ -84,6 +90,7 @@ class AiPostGenerationController extends ResponseController
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
+                'generated_image' => $imageUrl,
             ], 'Content generated successfully', 200);
         } catch (\Exception $e) {
             return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
@@ -138,6 +145,12 @@ class AiPostGenerationController extends ResponseController
                 throw new \Exception("Invalid JSON format received from AI.");
             }
 
+            // --- NEW: Image Generation Step ---
+            // Caption ka use karke ek visual prompt banayein
+            $imagePrompt = "Create a professional social media graphic for: " . $structuredData['title'] . ". Style: Clean, modern, related to " . $chapter->chapter_title;
+            
+            $imageUrl = $this->generateAIImage($imagePrompt);
+
             // 3. Send successful response to React
             return $this->sendResponse([
                 'caption' => $structuredData['caption'] ?? '',
@@ -149,10 +162,24 @@ class AiPostGenerationController extends ResponseController
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
+                'generated_image' => $imageUrl,
             ], 'Content generated successfully', 200);
 
         } catch (\Exception $e) {
             return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    private function generateAIImage($prompt)
+    {
+        $response = OpenAI::images()->create([
+            'model' => 'dall-e-3',
+            'prompt' => $prompt,
+            'n' => 1,
+            'size' => '1024x1024',
+            'quality' => 'standard',
+        ]);
+
+        return $response->data[0]->url; // Temporary URL from OpenAI
     }
 }
