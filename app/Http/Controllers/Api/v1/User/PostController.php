@@ -128,6 +128,7 @@ class PostController extends ResponseController
                 'caption' => $post->caption,
                 'script' => $post->script,
                 'hashtags' => $post->hastag,
+                'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,
                 'ai_model' => $post->ai_model,
                 'ai_prompt' => $post->ai_prompt,
                 'status' => $post->status,
