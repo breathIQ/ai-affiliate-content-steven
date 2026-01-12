@@ -38,7 +38,7 @@ class ResponseController extends Controller
             'success' => false,
             'responseCode' => 422,
             'error' => 'Validation failed.',
-            'messages' => $errors,
+            'message' => $errors,
             'timestamp' => now()->format('Y-m-d H:i:s')
         ];
 

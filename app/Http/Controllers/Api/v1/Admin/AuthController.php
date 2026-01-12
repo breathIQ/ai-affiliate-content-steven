@@ -92,7 +92,6 @@ class AuthController extends ResponseController
             // 'confirm_password' => 'required|same:new_password'
         ], [
             'new_password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.',
-            'confirm_password.same' => 'Confirm password must match the new password.'
         ]);
 
         if($validator->fails()) {
