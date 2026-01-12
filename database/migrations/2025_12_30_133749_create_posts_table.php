@@ -28,6 +28,7 @@ return new class extends Migration
             $table->enum('media_assets', ['single', 'carousel'])->default('single');
             $table->enum('status', ['draft', 'scheduled', 'published'])->default('draft');
             $table->text('affiliate_url')->nullable(); 
+            $table->string('chapter_name')->nullable();
             $table->timestamps();
         });
     }

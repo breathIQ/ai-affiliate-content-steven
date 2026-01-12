@@ -59,8 +59,8 @@ class PostController extends ResponseController
                     'id' => $post->id,
                     'media' => $mediaUrl,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
-                    'chapter_name' => $post->chapter->name ?? $post->chapter->chapter_title ?? 'N/A',
-                    'chapter_code' => $post->chapter->chapter ?? '', // e.g. Ch-12
+                    'chapter_name' => $post->chapter->name ?? $post->chapter->chapter_title ?? $post->chapter_name,
+                    'chapter_code' => $post->chapter->chapter ?? $post->chapter_name, // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
@@ -122,8 +122,8 @@ class PostController extends ResponseController
                 'id' => $post->id,
                 'chapter' => [
                     'id' => $post->chapter_id,
-                    'chapter_title' => $post->chapter->chapter_title ?? 'N/A',
-                    'chapter' => $post->chapter->chapter ?? '',
+                    'chapter_title' => $post->chapter->chapter_title ?? $post->chapter_name,
+                    'chapter' => $post->chapter->chapter ?? $post->chapter_name,
                 ],
                 'caption' => $post->caption,
                 'script' => $post->script,
@@ -182,7 +182,8 @@ class PostController extends ResponseController
     public function store(StorePostRequest $request)
     {
         $user = Auth::user();
-        return DB::transaction(function () use ($request,$user) {
+        $chapterName = Chapter::find($request->chapter_id)->chapter;
+        return DB::transaction(function () use ($request,$user,$chapterName) {
 
             // 1. Create Post
             $post = Post::create([
@@ -198,6 +199,7 @@ class PostController extends ResponseController
                 'published_at'=> $request->status === 'published' ? now() : null,
                 'hastag' => $request->hashtags,
                 'affiliate_url' => $request->affiliate_url,
+                'chapter_name' => $chapterName,
             ]);
 
             // 2. Media (File Upload)

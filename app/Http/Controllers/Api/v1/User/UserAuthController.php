@@ -34,7 +34,7 @@ class UserAuthController extends ResponseController
             'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.',
         ]);
         if ($validator->fails()) {
-            return $this->sendValidationError($validator->errors());
+            return $this->sendValidationError($validator->errors()->first());
         }
         try {
             $userRole = Role::where('role', 'User')->first();
@@ -155,7 +155,7 @@ class UserAuthController extends ResponseController
         ]);
 
         if($validator->fails()) {
-            return $this->sendValidationError($validator->errors());
+            return $this->sendValidationError($validator->errors()->first());
         }
 
         try {
@@ -311,10 +311,28 @@ class UserAuthController extends ResponseController
             ]);
 
             if ($validator->fails()) {
-                return $this->sendValidationError($validator->errors());
+                return $this->sendValidationError($validator->errors()->first());
             }
 
             $avatarPath = $user->avatar;
+            /**
+         * CASE 1: Avatar explicitly sent as empty string → remove avatar
+         */
+            if ($request->has('avatar') && $request->avatar == '') {
+
+                    if ($user->avatar) {
+                        $oldPath = str_replace('/storage/', '', $user->avatar);
+
+                        if (Storage::disk('public')->exists($oldPath)) {
+                            Storage::disk('public')->delete($oldPath);
+                    }
+                }
+
+                $avatarPath = null;
+            }
+            /**
+         * CASE 2: New avatar uploaded
+         */
             if ($request->hasFile('avatar')) {
                 // Delete old avatar if exists
                  if ($user->avatar) {
