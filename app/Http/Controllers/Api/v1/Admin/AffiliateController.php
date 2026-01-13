@@ -33,11 +33,23 @@ class AffiliateController extends ResponseController
                 return $this->sendError('No valid email provided.', [], 422);
             }
 
-            foreach ($emails as $email) {
+            $invalidEmails = [];
 
+            foreach ($emails as $email) {
                 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    continue;
+                    $invalidEmails[] = $email;
                 }
+            }
+
+            if (!empty($invalidEmails)) {
+                return $this->sendError(
+                    'Invalid email(s) provided.',
+                    ['invalid_emails' => $invalidEmails],
+                    422
+                );
+            }
+
+            foreach ($emails as $email) {
 
                 // Skip if already invited
                 if (InviteUser::where('email', $email)->where('is_used', false)->exists()) {

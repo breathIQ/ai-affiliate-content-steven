@@ -12,6 +12,9 @@ use Illuminate\Support\Str;
 class ProcessPdfChaptersJob implements ShouldQueue
 {
     use Queueable;
+    public $timeout = 300;
+    public $tries = 3;
+    public $backoff = 60;
 
     /**
      * Create a new job instance.
@@ -50,12 +53,16 @@ class ProcessPdfChaptersJob implements ShouldQueue
             Log::info("PDF Processing completed for file {$this->fileId} with chapters: " . json_encode($result['chapters']));
             // Save Chapters
             foreach ($result['chapters'] as $index => $chapter) {
-                Chapter::create([
-                    'book_id' => $fileRecord->id,
-                    'chapter'       => $chapter['chapter'],
-                    'chapter_title' => $chapter['title'],
-                    'content'       => $chapter['content'],
-                ]);
+                Chapter::updateOrCreate(
+                    [
+                        'book_id' => $fileRecord->id,
+                        'chapter' => $chapter['chapter'],
+                    ],
+                    [
+                        'chapter_title' => $chapter['title'],
+                        'content' => $chapter['content'],
+                    ]
+                );
             }
             
         } catch (\Exception $e) {
