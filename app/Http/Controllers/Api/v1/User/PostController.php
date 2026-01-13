@@ -59,8 +59,8 @@ class PostController extends ResponseController
                     'id' => $post->id,
                     'media' => $mediaUrl,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
-                    'chapter_name' => $post->chapter->name ?? $post->chapter->chapter_title ?? $post->chapter_name,
-                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter->chapter) ?? preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name), // e.g. Ch-12
+                    'chapter_name' => $post->chapter?->name ?? $post->chapter?->chapter_title ?? $post->chapter_title,
+                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter?->chapter) ?? preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title), // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
@@ -122,8 +122,8 @@ class PostController extends ResponseController
                 'id' => $post->id,
                 'chapter' => [
                     'id' => $post->chapter_id,
-                    'chapter_title' => $post->chapter->chapter_title ?? $post->chapter_name,
-                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter->chapter) ?? preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name),
+                    'chapter_title' => $post->chapter?->chapter_title ?? $post->chapter_title,
+                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter?->chapter) ?? preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name),
                 ],
                 'caption' => $post->caption,
                 'script' => $post->script,
@@ -182,7 +182,7 @@ class PostController extends ResponseController
     public function store(StorePostRequest $request)
     {
         $user = Auth::user();
-        $chapterName = Chapter::find($request->chapter_id)->chapter;
+        $chapterName = Chapter::find($request->chapter_id);
         return DB::transaction(function () use ($request,$user,$chapterName) {
 
             // 1. Create Post
@@ -199,7 +199,8 @@ class PostController extends ResponseController
                 'published_at'=> $request->status === 'published' ? now() : null,
                 'hastag' => $request->hashtags,
                 'affiliate_url' => $request->affiliate_url,
-                'chapter_name' => $chapterName,
+                'chapter_name' => $chapterName->chapter,
+                'chapter_title' => $chapterName->chapter_title,
             ]);
 
             // 2. Media (File Upload)
