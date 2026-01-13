@@ -125,7 +125,7 @@ class UserController extends ResponseController
                     'media' => $mediaUrl,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
                     'chapter_name' => $post->chapter_title ?? 'N/A',
-                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title ?? 'N/A'),
+                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                     'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
@@ -180,7 +180,7 @@ class UserController extends ResponseController
                 'chapter' => [
                     'id' => $post->chapter_id,
                     'chapter_title' => $post->chapter_title ?? 'N/A',
-                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title ?? 'N/A'),
+                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                 ],
                 'media_assets' => $post->media_assets,
                 'media' => $formattedMedia,

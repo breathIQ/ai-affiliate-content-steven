@@ -60,7 +60,7 @@ class PostController extends ResponseController
                     'media' => $mediaUrl,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
                     'chapter_name' => $post->chapter_title ?? 'N/A',
-                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title ?? 'N/A'), // e.g. Ch-12
+                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'), // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
@@ -123,7 +123,7 @@ class PostController extends ResponseController
                 'chapter' => [
                     'id' => $post->chapter_id,
                     'chapter_title' => $post->chapter_title ?? 'N/A',
-                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title ?? 'N/A'),
+                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                 ],
                 'caption' => $post->caption,
                 'script' => $post->script,
