@@ -59,8 +59,8 @@ class PostController extends ResponseController
                     'id' => $post->id,
                     'media' => $mediaUrl,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
-                    'chapter_name' => $post->chapter?->name ?? $post->chapter?->chapter_title ?? $post->chapter_title,
-                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter?->chapter) ?? preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title), // e.g. Ch-12
+                    'chapter_name' => $post->chapter_title ?? 'N/A',
+                    'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title ?? 'N/A'), // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
@@ -122,8 +122,8 @@ class PostController extends ResponseController
                 'id' => $post->id,
                 'chapter' => [
                     'id' => $post->chapter_id,
-                    'chapter_title' => $post->chapter?->chapter_title ?? $post->chapter_title,
-                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter?->chapter) ?? preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name),
+                    'chapter_title' => $post->chapter_title ?? 'N/A',
+                    'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_title ?? 'N/A'),
                 ],
                 'caption' => $post->caption,
                 'script' => $post->script,

@@ -29,7 +29,7 @@ return new class extends Migration
             $table->enum('status', ['draft', 'scheduled', 'published'])->default('draft');
             $table->text('affiliate_url')->nullable(); 
             $table->string('chapter_name')->nullable();
-            $table->string('chapter_title')->nullable();
+            $table->text('chapter_title')->nullable();
             $table->timestamps();
         });
     }
