@@ -58,8 +58,9 @@ class PostController extends ResponseController
                 return [
                     'id' => $post->id,
                     'media' => $mediaUrl,
+                    'media_type' => $media->media_type,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
-                    'chapter_name' => $post->chapter_title ?? 'N/A',
+                    'chapter_name' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'), // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
@@ -102,7 +103,7 @@ class PostController extends ResponseController
             $formattedMedia = $post->media->sortBy('media_order')->map(function($m) {
                 return [
                     'id' => $m->id,
-                    'type' => $m->media_type,
+                    'media_type' => $m->media_type,
                     'url' => asset(Storage::url($m->media_path)),
                     'order' => $m->media_order
                 ];
@@ -122,7 +123,7 @@ class PostController extends ResponseController
                 'id' => $post->id,
                 'chapter' => [
                     'id' => $post->chapter_id,
-                    'chapter_title' => $post->chapter_title ?? 'N/A',
+                    'chapter_title' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                 ],
                 'caption' => $post->caption,

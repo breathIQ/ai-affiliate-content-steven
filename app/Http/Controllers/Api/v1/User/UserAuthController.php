@@ -280,7 +280,7 @@ class UserAuthController extends ResponseController
             $data = [
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png')),
+                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
                 'affiliate_id' => $user->affiliate_id ?? '', // Assuming this exists or is username
                 'affiliate_link' => 'https://www.co2book.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
                 'social_accounts' => [

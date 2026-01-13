@@ -49,7 +49,7 @@ class UserController extends ResponseController
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png')),
+                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
                 'affiliate_id' => $user->affiliate_id,
                 'posts_generated' => $user->posts_count,
                 'posts_published' => $user->published_posts_count,
@@ -78,7 +78,7 @@ class UserController extends ResponseController
             $user_data['affiliate_id'] =  $user->affiliate_id;
             $user_data['email'] =  $user->email;
             $user_data['status'] =  $user->status;
-            $user_data['avatar'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png'));
+            $user_data['avatar'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : null;
             
 
             return $this->sendResponse($user_data, 'user data get successfully.', 200);
@@ -123,8 +123,9 @@ class UserController extends ResponseController
                 return [
                     'id' => $post->id,
                     'media' => $mediaUrl,
+                    'media_type' => $media->media_type,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
-                    'chapter_name' => $post->chapter_title ?? 'N/A',
+                    'chapter_name' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                     'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,
                     'ai_model' => $post->ai_model,
@@ -163,7 +164,7 @@ class UserController extends ResponseController
             $formattedMedia = $post->media->sortBy('media_order')->map(function($m) {
                 return [
                     'id' => $m->id,
-                    'type' => $m->media_type,
+                    'media_type' => $m->media_type,
                     'url' => asset(Storage::url($m->media_path)),
                     'order' => $m->media_order
                 ];
@@ -175,11 +176,11 @@ class UserController extends ResponseController
                     'id' => $post->user->id,
                     'name' => $post->user->name,
                     'email' => $post->user->email,
-                    'avatar' => $post->user->avatar ? asset(Storage::url($post->user->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png')),
+                    'avatar' => $post->user->avatar ? asset(Storage::url($post->user->avatar)) : null,
                 ],
                 'chapter' => [
                     'id' => $post->chapter_id,
-                    'chapter_title' => $post->chapter_title ?? 'N/A',
+                    'chapter_title' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                 ],
                 'media_assets' => $post->media_assets,
