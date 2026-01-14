@@ -52,9 +52,9 @@ class AffiliateController extends ResponseController
             foreach ($emails as $email) {
 
                 // Skip if already invited
-                if (InviteUser::where('email', $email)->where('is_used', false)->exists()) {
-                    continue;
-                }
+                // if (InviteUser::where('email', $email)->where('is_used', false)->exists()) {
+                //     continue;
+                // }
 
                 $token = Str::uuid();
 
