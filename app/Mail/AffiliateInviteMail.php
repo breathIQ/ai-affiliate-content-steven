@@ -41,7 +41,7 @@ class AffiliateInviteMail extends Mailable
         return new Content(
             view: 'mail.affiliate-invite',
             with: [
-                'inviteUrl' => 'http://localhost:3000/signup?token=' . $this->invite->token,
+                'inviteUrl' => 'https://aiaffiliate.betacvinfotech.com/signup?token=' . $this->invite->token,
             ],
         );
     }
