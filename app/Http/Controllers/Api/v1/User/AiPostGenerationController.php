@@ -18,31 +18,54 @@ class AiPostGenerationController extends ResponseController
     {
         $validator = Validator::make($request->all(), [
             'chapter' => 'required|exists:chapters,id',
-            'model'   => 'required|string', // e.g., 'gpt-4', 'claude-3'
+            'model'   => 'required|string', // e.g., 'gpt-4-turbo', 'claude-3-haiku-20240307'
             'prompt'  => 'required|string',
+
+             // new fields
+            'post_type' => 'required|in:carousel,single',
+
+            'slides' => 'required_with:slide_texts|integer|min:1',
+
+            'slide_texts' => 'nullable|array',
+            'slide_texts.*' => 'required|string',
+
+            // design only if slide_texts exists
+            'design' => 'required_with:slide_texts|array',
+
+            'design.overlay_color' => 'required_with:slide_texts|string',
+            'design.text_placement' => 'required_with:slide_texts|in:left,center,right',
+            'design.font_family' => 'required_with:slide_texts|string',
+            'design.font_size' => 'required_with:slide_texts|string',
+            'design.font_weight' => 'required_with:slide_texts|string',
         ]);
 
         if ($validator->fails()) {
             return $this->sendValidationError($validator->errors());
         }
+        // dd($request->all());
         $chapter = Chapter::find($request->chapter);
         $modelChoice = $request->model;
         $userPrompt = $request->prompt;
+
+        $postType    = $request->post_type;
+        $slidesCount = (int) $request->slides;
+        $slideTexts  = $request->slide_texts ?? [];
+        $design      = $request->design ?? null;
 
         // Final prompt jo AI ko jayega
         // $finalPrompt = "Chapter: {$chapter->content}\n\nTask: {$userPrompt}";
         $finalPrompt = "Task: {$userPrompt}";
 
         if (str_contains($modelChoice, 'gpt')) {
-            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter);
+            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$slideTexts,$design);
         } elseif (str_contains($modelChoice, 'claude')) {
-            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter);
+            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$slideTexts,$design);
         }
 
         return $this->sendError('Invalid Model Selected', [], 400);
     }
 
-    private function generateWithOpenAI($model, $prompt,$chapter)
+    private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$slideTexts,$design)
     {
         
       // AI ko specific format sikhane ke liye prompt
@@ -75,22 +98,24 @@ class AiPostGenerationController extends ResponseController
                 throw new \Exception("Invalid JSON format received from AI.");
             }
 
-             // --- NEW: Image Generation Step ---
-            // Caption ka use karke ek visual prompt banayein
-            $imagePrompt = "A high-quality social media graphic about: " . $structuredData['title'];            
-            $imageUrl = $this->generateAIImage($imagePrompt);
+            /** ------------------ IMAGE GENERATION ------------------ */
+            $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
 
+            /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
                 'caption' => $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'],
                 'script' => $structuredData['script'],
                 'title' => $structuredData['title'],
                 'model' => $model,
+                'post_type' => $postType,
+                'slides' => $slidesCount,
+                'images' => $images,
                 'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
-                'generated_image' => $imageUrl,
+                // 'generated_image' => $imageUrl,
             ], 'Content generated successfully', 200);
         } catch (\Exception $e) {
             return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
@@ -98,7 +123,7 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    private function generateWithClaude($model, $prompt, $chapter)
+    private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $slideTexts, $design)
     {
         // System Instruction for structured output like your UI
         $systemInstruction = "You are an expert social media content creator. 
@@ -145,11 +170,8 @@ class AiPostGenerationController extends ResponseController
                 throw new \Exception("Invalid JSON format received from AI.");
             }
 
-            // --- NEW: Image Generation Step ---
-            // Caption ka use karke ek visual prompt banayein
-            $imagePrompt = "Create a professional social media graphic for: " . $structuredData['title'] . ". Style: Clean, modern, related to " . $chapter->chapter_title;
-            
-            $imageUrl = $this->generateAIImage($imagePrompt);
+            // --- NEW: Image Generation --- 
+            $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -157,12 +179,14 @@ class AiPostGenerationController extends ResponseController
                 'hashtags' => $structuredData['hashtags'] ?? '',
                 'script' => $structuredData['script'] ?? '',
                 'title' => $structuredData['title'] ?? '',
-                'model' => $model,
+                'model' => $model,  
+                'post_type' => $postType,
+                'slides' => $slidesCount,
+                'images' => $images,
                 'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
-                'generated_image' => $imageUrl,
             ], 'Content generated successfully', 200);
 
         } catch (\Exception $e) {
@@ -170,16 +194,157 @@ class AiPostGenerationController extends ResponseController
         }
     }
 
-    private function generateAIImage($prompt)
+    private function generateAIImage($prompt, $model = 'dall-e-3')
     {
         $response = OpenAI::images()->create([
-            'model' => 'dall-e-3',
+            'model' => $model,
             'prompt' => $prompt,
-            'n' => 1,
             'size' => '1024x1024',
             'quality' => 'standard',
         ]);
 
         return $response->data[0]->url; // Temporary URL from OpenAI
     }
+
+    private function buildSlideImagePrompt($title, $slideText, $design, $slideNumber)
+    {
+        // $designPrompt = '';
+
+        // if (!empty($design)) {
+        //     $designPrompt = "
+        //     Design requirements:
+        //     - Text placement: {$design['text_placement']}
+        //     - Font style: {$design['font_family']} font, weight {$design['font_weight']}
+        //     - Text size hierarchy: {$design['font_size']}
+        //     - Overlay color theme: {$design['overlay_color']}
+        //     ";
+        // }
+
+        // return "
+        //     Create a high-quality image.
+
+        //     Image concept:
+        //     '{$title}'
+
+        //     The image MUST contain the following overlay text exactly:
+        //     '{$slideText}'
+
+        //     {$designPrompt}
+
+        //     Additional instructions for text:
+        //     - Use clean, bold, sans-serif fonts only (e.g., Arial, Helvetica, Poppins)
+        //     - Text must be in clear, US English characters
+        //     - No distorted, blurry, or handwritten text
+        //     - Text color must contrast strongly against the background for maximum readability
+        //     - No artistic or decorative fonts
+        //     - The overlay text should be centered and spaced for easy reading
+
+        //     Additional rules:
+        //     - Clean, modern, professional social media design
+        //     - No watermark, no logos, no extra text
+        //     - 4:5 aspect ratio
+        // ";
+
+        return "
+            Create a high-quality minimal background image No text, no letters, no numbers, no symbols.
+            Simple abstract background.High contrast, professional style (NOT an abstract illustration).
+
+            PRIMARY OBJECTIVE (DO NOT IGNORE):
+            The image must clearly and legibly display the following text EXACTLY as written, with no changes, no paraphrasing, and no missing words:
+
+            TEXT TO DISPLAY (EXACT):
+            '{$slideText}'
+
+            DESIGN STYLE:
+            - Clean, modern, professional image
+           
+            - Font family: {$design['font_family']}
+            - Font weight: {$design['font_weight']}
+            - Text hierarchy: {$design['font_size']}
+            - Text placement: {$design['text_placement']}
+            - Strong contrast between text and background
+            - Overlay color theme: {$design['overlay_color']}
+
+            BACKGROUND & IMAGE CONCEPT:
+            - Visual concept inspired by: '{$title}'
+            - Background must be minimal and must NOT overpower the text
+            - Background exists only to support readability
+
+            STRICT NEGATIVE RULES:
+            - No handwritten fonts
+            - No decorative or artistic fonts
+            - No distorted, warped, blurry, or curved text
+            - No extra text, captions, watermarks, logos, or symbols
+            - Do NOT rewrite, summarize, or reinterpret the text
+
+            FORMAT:
+            - Aspect ratio: 4:5
+            - High resolution
+
+        ";
+    }
+
+    private function getImages($caption, $postType, $slidesCount, $slideTexts, $design)
+    {
+        $images = [];
+
+        if ($postType === 'carousel') {
+            
+            for ($i = 0; $i < $slidesCount; $i++) {
+
+                $slideText = $slideTexts[$i] ?? null;
+
+                $imagePrompt = $this->buildSlideImagePrompt(
+                    $caption,
+                    $slideText,
+                    $design,
+                    $i + 1
+                );
+
+                $images[] = [
+                    'slide' => $i + 1,
+                    'text'  => $slideText,
+                    'image_url' => $this->generateAIImage($imagePrompt),
+                ];
+            }
+
+        } else {
+            // Single post
+            $slideText = $slideTexts[0] ?? null;
+
+            if ($slideText) {
+                // Single with text
+                $imagePrompt = $this->buildSlideImagePrompt(
+                    $caption,
+                    $slideText,
+                    $design,
+                    1
+                );
+            } else {
+                // Single without text
+                $imagePrompt = "
+                Create a high-quality social media post image.
+
+                Image concept:
+                '{$caption}'
+
+                Design style:
+                - Modern
+                - Clean
+                - Professional
+                - Social media optimized
+                - No text overlay
+                ";
+            }
+
+            $images[] = [
+                'slide' => 1,
+                'text'  => $slideText,
+                'image_url' => $this->generateAIImage($imagePrompt),
+            ];
+        }
+
+        return $images;
+    }
+
 }

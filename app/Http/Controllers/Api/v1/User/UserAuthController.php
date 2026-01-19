@@ -203,7 +203,7 @@ class UserAuthController extends ResponseController
         $social = SocialAccount::where([
             'provider' => $request->provider,
             'provider_user_id' => $socialUser->getId()
-        ])->first();
+        ])->first();    
 
         if ($social) {
             $user = $social->user;
@@ -382,4 +382,48 @@ class UserAuthController extends ResponseController
 
         return $slug;
     }
+
+    public function handle(Request $request, $provider)
+    {
+        if ($provider === 'tiktok') {
+            return $this->tiktokLogin($request->code,$request->code_verifier);
+        }
+
+        if ($provider === 'instagram') {
+            return $this->instagram($request->code);
+        }
+
+        return response()->json(['error' => 'Invalid provider'], 400);
+    }
+
+    private function tiktokLogin($code,$codeVerifier)
+    {
+        $response = Http::asForm()->post(
+            'https://open-api.tiktok.com/oauth/access_token/',
+            [
+                'client_key' => Config::get('services.tiktok.client_key'),
+                'client_secret' => Config::get('services.tiktok.client_secret'),
+                'code' => $code,
+                'grant_type' => 'authorization_code',
+                'redirect_uri' => Config::get('services.tiktok.redirect'),
+                'code_verifier' => $codeVerifier,
+            ]
+        )->json();
+
+        if (!isset($response['data']['open_id'])) {
+            return response()->json($response, 400);
+        }
+
+        $user = User::updateOrCreate(
+            ['provider' => 'tiktok', 'provider_id' => $response['data']['open_id']],
+            ['name' => 'TikTok User']
+        );
+
+        return response()->json([
+            'token' => $user->createToken('api')->plainTextToken,
+            'user' => $user,
+        ]);
+    }
+
+
 }

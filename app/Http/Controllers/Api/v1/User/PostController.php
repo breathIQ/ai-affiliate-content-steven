@@ -183,7 +183,11 @@ class PostController extends ResponseController
     public function store(StorePostRequest $request)
     {
         $user = Auth::user();
-        $chapterName = Chapter::find($request->chapter_id);
+        $chapterName = Chapter::join('book_chapters', 'chapters.chapter', '=', 'book_chapters.chapter')
+            ->where('chapters.id', $request->chapter_id)
+            ->select('chapters.id', 'chapters.chapter', 'book_chapters.chapter_title as chapter_title')
+            ->first();
+
         return DB::transaction(function () use ($request,$user,$chapterName) {
 
             // 1. Create Post

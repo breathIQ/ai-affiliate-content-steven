@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Facades\Auth;
-use App\Models\{Chapter,AffiliateClick,Post,Media,File};
+use App\Models\{Chapter,AffiliateClick,Post,Media,File,BookChapter};
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;  
 use Illuminate\Support\Facades\Storage;
@@ -154,7 +154,9 @@ class UserDashboardController extends ResponseController
     {
         try{
 
-            $chapters = Chapter::select('id','book_id','chapter','chapter_title')->get();
+            $chapters = Chapter::select('chapters.id','chapters.book_id','chapters.chapter','book_chapters.chapter_title')
+                ->join('book_chapters', 'chapters.chapter', '=', 'book_chapters.chapter')
+                ->get();
             if(!$chapters){
                 return $this->sendError('Chapters data not found.', [], 500);
             }
