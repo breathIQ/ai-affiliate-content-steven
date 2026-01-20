@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Services\{SocialTokenService};
 use App\Jobs\PublishPostToSocialMedia;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 
 class PostController extends ResponseController
 {
@@ -212,10 +214,15 @@ class PostController extends ResponseController
             if ($request->input('media')) {
                 foreach ($request->input('media') as $index => $mediaItem) {
 
-                    // Check if this file exists in the request
-                    if ($request->hasFile("media.$index.file")) {
+                    $mediaType = null;
+                    $path = null;
 
-                        $uploadedFile = $request->file("media.$index.file");
+                    // $file = $mediaItem['file'] ?? null;
+                    $uploadedFile = $request->file("media.$index.file");
+                    // Check if this file exists in the request
+                    if ($uploadedFile instanceof UploadedFile) {
+
+                        // $uploadedFile = $file;
 
                         if (!$uploadedFile->isValid()) {
                             continue; // skip invalid files
@@ -233,8 +240,53 @@ class PostController extends ResponseController
 
                         // Store file
                         $path = $uploadedFile->store('posts/media', 'public');
+                        \Log::info('file path--'.$path);
+                    //    dd($path) ;
+                    }elseif (is_string($mediaItem['file']) && filter_var($mediaItem['file'], FILTER_VALIDATE_URL)) {
 
-                        // Create media record
+                        try {
+                            $response = Http::timeout(30)->get($mediaItem['file']);
+
+                            if (!$response->successful()) {
+                                continue;
+                            }
+
+                            $mime = $response->header('Content-Type');
+
+                            $mediaType = str_starts_with($mime, 'image/')
+                                ? 'image'
+                                : (str_starts_with($mime, 'video/') ? 'video' : null);
+
+                            if (!$mediaType) {
+                                continue;
+                            }
+
+                            // Extension from mime
+                            $extension = match ($mime) {
+                                'image/png' => 'png',
+                                'image/jpeg' => 'jpg',
+                                'image/webp' => 'webp',
+                                'video/mp4' => 'mp4',
+                                default => 'bin',
+                            };
+
+                            $filename = Str::uuid() . '.' . $extension;
+                            $path = "posts/media/$filename";
+                            // dd($path);
+                            \Log::info('Url path--'.$path);
+                            // Use streaming for safety
+                            Storage::disk('public')->writeStream(
+                                $path,
+                                fopen($mediaItem['file'], 'r')
+                            );
+
+                        } catch (\Throwable $e) {
+                            \Log::error('Failed to download media: ' . $e->getMessage());
+                            continue; // skip failed downloads
+                        }
+                    }
+                    \Log::info('path--'.$path.'---mediaType--'.$mediaType);
+                    if ($path && $mediaType) {
                         $post->media()->create([
                             'media_type'  => $mediaType,
                             'media_path'  => $path,

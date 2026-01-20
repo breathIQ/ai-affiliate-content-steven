@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\UploadedFile;
 
 
 class StorePostRequest extends FormRequest
@@ -37,9 +38,23 @@ class StorePostRequest extends FormRequest
             'scheduled_at' => 'nullable|date',
 
             'media' => 'nullable|array',
-            // 'media.*.media_type' => 'required|in:image,video',
-            // 'media.*.media_path' => 'required|string',
-            'media.*.file' => 'required|file|mimes:jpg,jpeg,png,gif,mp4,mov,avi,webm|max:51200',
+            // 'media.*.file' => 'required|file|mimes:jpg,jpeg,png,gif,mp4,mov,avi,webm|max:51200',
+            'media.*.file' => [
+                'required',
+                function ($attribute, $value, $fail) {
+                    // Uploaded file
+                    if ($value instanceof UploadedFile) {
+                        return;
+                    }
+
+                    // URL string
+                    if (is_string($value) && filter_var($value, FILTER_VALIDATE_URL)) {
+                        return;
+                    }
+
+                    $fail('The file must be an uploaded file or a valid URL.');
+                },
+            ],
             'media.*.media_order' => 'required|integer',
 
             'hashtags' => 'nullable|string',
@@ -57,7 +72,7 @@ class StorePostRequest extends FormRequest
             'success' => false,
             'responseCode' => 422,
             'error' => 'Validation failed.',
-            'messages' => $validator->errors(),
+            'messages' => $validator->errors()->first(),
             'timestamp' => now()->format('Y-m-d H:i:s')
 
         ], 422));

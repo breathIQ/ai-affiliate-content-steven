@@ -43,7 +43,11 @@ class AiPostGenerationController extends ResponseController
             return $this->sendValidationError($validator->errors()->first());
         }
         // dd($request->all());
-        $chapter = Chapter::find($request->chapter);
+        // $chapter = Chapter::find($request->chapter);
+        $chapter = Chapter::join('book_chapters', 'chapters.chapter', '=', 'book_chapters.chapter')
+            ->where('chapters.id', $request->chapter)
+            ->select('chapters.id', 'chapters.chapter', 'book_chapters.chapter_title as chapter_title')
+            ->first();
         $modelChoice = $request->model;
         $userPrompt = $request->prompt;
 
