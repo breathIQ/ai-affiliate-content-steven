@@ -7,6 +7,11 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Api\v1\ResponseController;
 use App\Models\{Post,AffiliateClick,PostPlatform};
 use Illuminate\Support\Facades\DB;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
 class AffiliateClickController extends ResponseController
 {
     public function track(Request $request, $post_id, $affiliate_id)
@@ -55,4 +60,42 @@ class AffiliateClickController extends ResponseController
     private function getDevice($ua) {
         return preg_match('/(android|iphone|ipad)/i', $ua) ? 'mobile' : 'desktop';
     }
+
+    public function saveRemoteFile(Request $request)
+    {
+        // Download file
+        $response = Http::timeout(30)->get($request->file_url);
+
+        if (!$response->successful()) {
+            throw new \Exception('Failed to download file');
+        }
+
+        // Get mime type
+        $mime = $response->header('Content-Type'); 
+        // example: image/png, video/mp4
+
+        // Decide folder & extension
+        $extension = match ($mime) {
+            'image/png' => 'png',
+            'image/jpeg' => 'jpg',
+            'image/webp' => 'webp',
+            'video/mp4' => 'mp4',
+            default => 'bin',
+        };
+
+        $folder = str_starts_with($mime, 'video')
+            ? 'videos'
+            : 'images';
+
+        // Generate filename
+        $filename = Str::uuid().'.'.$extension;
+        $path = "$folder/$filename";
+
+        // Save to storage
+        Storage::disk('public')->put($path, $response->body());
+
+        $url = asset('storage/'.$path);
+        return $this->sendResponse($url, 'File saved successfully', 200);
+    }
+
 }

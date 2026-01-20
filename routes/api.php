@@ -7,7 +7,7 @@ use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController,AffiliateController,
     FileController};
 use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController,
-    AiPostGenerationController,TikTokAuthController};
+    AiPostGenerationController,TikTokAuthController,InstagramAuthController};
 
 
 // Route::get('/user', function (Request $request) {
@@ -71,9 +71,14 @@ Route::group(['prefix' => 'v1/user'], function () {
     Route::get('/get-chapter', [UserDashboardController::class, 'getChapter']);
     Route::get('/affiliate-click/{post_id}/{affiliate_id}', [AffiliateClickController::class, 'track']);
 
+    Route::post('/save-remote-file', [AffiliateClickController::class, 'saveRemoteFile']);
+
+    Route::get('/webhooks/instagram', [InstagramAuthController::class, 'verify']);
+    Route::post('/webhooks/instagram', [InstagramAuthController::class, 'handle']);
+
     //***********instagram login********** */
-    Route::get('/auth/instagram/redirect', [UserAuthController::class, 'redirect']);
-    Route::get('/auth/instagram/callback', [UserAuthController::class, 'callback']);
+    Route::get('/auth/instagram/redirect', [InstagramAuthController::class, 'redirect']);
+    Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'callback']);
 
     //***********tiktok login********** */
     Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
