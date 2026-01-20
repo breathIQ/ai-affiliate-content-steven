@@ -21,6 +21,18 @@ Route::group(['prefix' => 'v1'], function () {
 
     //*****************Invite Affiliates ************************** */
     Route::post('/affiliate/invite', [AffiliateController::class, 'sendAffiliateInvite']);
+
+    //*****************Instagram Webhook ************************** */
+    Route::get('/webhooks/instagram', [InstagramAuthController::class, 'verify']);
+    Route::post('/webhooks/instagram', [InstagramAuthController::class, 'handle']);
+
+    //***********instagram login********** */
+    Route::get('/auth/instagram/redirect', [InstagramAuthController::class, 'redirect']);
+    Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'callback']);
+
+    //***********tiktok login********** */
+    Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
+    Route::get('/auth/tiktok/callback', [TikTokAuthController::class, 'callback']);
 });
 
 //****************************Admin Route **************************************** */
@@ -73,16 +85,6 @@ Route::group(['prefix' => 'v1/user'], function () {
 
     Route::post('/save-remote-file', [AffiliateClickController::class, 'saveRemoteFile']);
 
-    Route::get('/webhooks/instagram', [InstagramAuthController::class, 'verify']);
-    Route::post('/webhooks/instagram', [InstagramAuthController::class, 'handle']);
-
-    //***********instagram login********** */
-    Route::get('/auth/instagram/redirect', [InstagramAuthController::class, 'redirect']);
-    Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'callback']);
-
-    //***********tiktok login********** */
-    Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
-    Route::get('/auth/tiktok/callback', [TikTokAuthController::class, 'callback']);
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
 
