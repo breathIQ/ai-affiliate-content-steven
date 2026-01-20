@@ -33,7 +33,7 @@ class AiPostGenerationController extends ResponseController
             'design' => 'required_with:slide_texts|array',
 
             'design.overlay_color' => 'required_with:slide_texts|string',
-            'design.text_placement' => 'required_with:slide_texts|in:left,center,right',
+            'design.text_placement' => 'required_with:slide_texts|string',
             'design.font_family' => 'required_with:slide_texts|string',
             'design.font_size' => 'required_with:slide_texts|string',
             'design.font_weight' => 'required_with:slide_texts|string',
