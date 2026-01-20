@@ -24,7 +24,7 @@ class AiPostGenerationController extends ResponseController
              // new fields
             'post_type' => 'required|in:carousel,single',
 
-            'slides' => 'required_with:slide_texts|integer|min:1',
+            'slides' => 'required_with:slide_texts|integer|min:1|max:4',
 
             'slide_texts' => 'nullable|array',
             'slide_texts.*' => 'required|string',

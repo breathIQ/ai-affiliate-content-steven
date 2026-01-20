@@ -15,6 +15,7 @@ use Laravel\Socialite\Facades\Socialite;
 use Config;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 
 class UserAuthController extends ResponseController
 {
@@ -194,7 +195,7 @@ class UserAuthController extends ResponseController
         if ($validator->fails()) {
             return $this->sendValidationError($validator->errors());
         }
-
+        dd(Socialite::driver('instagram'));
         $socialUser = Socialite::driver($request->provider)
             ->stateless()
             ->userFromToken($request->access_token);
@@ -383,45 +384,97 @@ class UserAuthController extends ResponseController
         return $slug;
     }
 
-    public function handle(Request $request, $provider)
+    // public function handle(Request $request, $provider)
+    // {
+    //     if ($provider === 'tiktok') {
+    //         return $this->tiktokLogin($request->code,$request->code_verifier);
+    //     }
+
+    //     if ($provider === 'instagram') {
+    //         return $this->instagram($request->code);
+    //     }
+
+    //     return response()->json(['error' => 'Invalid provider'], 400);
+    // }
+
+    // private function tiktokLogin($code,$codeVerifier)
+    // {
+    //     $response = Http::asForm()->post(
+    //         'https://open-api.tiktok.com/oauth/access_token/',
+    //         [
+    //             'client_key' => Config::get('services.tiktok.client_key'),
+    //             'client_secret' => Config::get('services.tiktok.client_secret'),
+    //             'code' => $code,
+    //             'grant_type' => 'authorization_code',
+    //             'redirect_uri' => Config::get('services.tiktok.redirect'),
+    //             'code_verifier' => $codeVerifier,
+    //         ]
+    //     )->json();
+
+    //     if (!isset($response['data']['open_id'])) {
+    //         return response()->json($response, 400);
+    //     }
+
+    //     $user = User::updateOrCreate(
+    //         ['provider' => 'tiktok', 'provider_id' => $response['data']['open_id']],
+    //         ['name' => 'TikTok User']
+    //     );
+
+    //     return response()->json([
+    //         'token' => $user->createToken('api')->plainTextToken,
+    //         'user' => $user,
+    //     ]);
+    // }
+
+    public function redirect()
     {
-        if ($provider === 'tiktok') {
-            return $this->tiktokLogin($request->code,$request->code_verifier);
-        }
-
-        if ($provider === 'instagram') {
-            return $this->instagram($request->code);
-        }
-
-        return response()->json(['error' => 'Invalid provider'], 400);
+        $query = http_build_query([
+            'client_id' => Config::get('services.instagram.client_id'),
+            'redirect_uri' => Config::get('services.instagram.redirect'),
+            'scope' => 'instagram_basic',
+            'response_type' => 'code',
+        ]); 
+        dd('https://www.facebook.com/v19.0/dialog/oauth?' . $query);
+        return redirect('https://www.facebook.com/v19.0/dialog/oauth?' . $query);
     }
 
-    private function tiktokLogin($code,$codeVerifier)
+    public function callback(Request $request)
     {
-        $response = Http::asForm()->post(
-            'https://open-api.tiktok.com/oauth/access_token/',
-            [
-                'client_key' => Config::get('services.tiktok.client_key'),
-                'client_secret' => Config::get('services.tiktok.client_secret'),
-                'code' => $code,
-                'grant_type' => 'authorization_code',
-                'redirect_uri' => Config::get('services.tiktok.redirect'),
-                'code_verifier' => $codeVerifier,
-            ]
-        )->json();
-
-        if (!isset($response['data']['open_id'])) {
-            return response()->json($response, 400);
+        if (!$request->code) {
+            abort(400, 'Authorization failed');
         }
 
-        $user = User::updateOrCreate(
-            ['provider' => 'tiktok', 'provider_id' => $response['data']['open_id']],
-            ['name' => 'TikTok User']
+        $tokenResponse = Http::asForm()->post(
+            'https://graph.facebook.com/v19.0/oauth/access_token',
+            [
+                'client_id' => Config::get('services.instagram.client_id'),
+                'client_secret' => Config::get('services.instagram.client_secret'),
+                'redirect_uri' => Config::get('services.instagram.redirect'),
+                'code' => $request->code,
+            ]
         );
 
+        $accessToken = $tokenResponse['access_token'];
+
+        $user = Http::get('https://graph.facebook.com/me', [
+            'fields' => 'id,name,email',
+            'access_token' => $accessToken,
+        ]);
+
+        // Create or login user
+        $localUser = User::firstOrCreate(
+            ['facebook_id' => $user['id']],
+            ['name' => $user['name'], 'email' => $user['email'] ?? null]
+        );
+
+        $token = $localUser->createToken('auth')->plainTextToken;
+
+        // return redirect(
+        //     config('app.frontend_url') . '/auth-success?token=' . $token
+        // );
         return response()->json([
-            'token' => $user->createToken('api')->plainTextToken,
-            'user' => $user,
+            'token' => $token,
+            'user' => $localUser,
         ]);
     }
 
