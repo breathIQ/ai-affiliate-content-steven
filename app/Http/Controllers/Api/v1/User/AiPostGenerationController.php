@@ -40,7 +40,7 @@ class AiPostGenerationController extends ResponseController
         ]);
 
         if ($validator->fails()) {
-            return $this->sendValidationError($validator->errors());
+            return $this->sendValidationError($validator->errors()->first());
         }
         // dd($request->all());
         $chapter = Chapter::find($request->chapter);
