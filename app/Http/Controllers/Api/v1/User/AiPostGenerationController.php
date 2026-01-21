@@ -351,4 +351,71 @@ class AiPostGenerationController extends ResponseController
         return $images;
     }
 
+
+    public function generateSlide(Request $request) 
+    {
+        $apiKey = Config::get('constant.gemini_keys.key');
+    //    dd($apiKey);
+        // Your requirement variables
+        $design = $request->input('design'); // color, placement, font, etc.
+        $slideText = $request->input('slide_texts');
+        $concept = $request->input('image_concept');
+ 
+        // 1. Construct the reasoning-based prompt
+        $prompt = "Create an Instagram graphic. Concept: {$concept}. "
+                . "Overlay the text '{$slideText}' exactly. "
+                . "Design requirements: Color {$design['overlay_color']}, "
+                . "Placement {$design['text_placement']}, "
+                . "Font {$design['font_family']}, Weight {$design['font_weight']}, Size {$design['font_size']}. "
+                . "Render the text with high-fidelity professional typography.";
+
+        try{
+            // 2. Execute the Request
+            $response = Http::withHeaders(['Content-Type' => 'application/json'])
+                ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={$apiKey}", [
+                    "contents" => [["parts" => [["text" => $prompt]]]],
+                    "generationConfig" => [
+                        "imageConfig" => [
+                            "aspectRatio" => "1:1", // Use '9:16' for Stories
+                            "imageSize" => "HD"   // Options: 'SD', 'HD', '2K', '4K'
+                        ]
+                    ]
+                ]);
+                
+                if ($response->failed()) {
+                    // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")
+                    dd($apiKey,$response->json()); 
+                }
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                // 3. Extract Base64 and save as URL
+                // $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
+                // $imageName = 'insta_' . uniqid() . '.png';
+                // Storage::disk('public')->put("posts/{$imageName}", base64_decode($base64));
+
+                // return response()->json([
+                //     'status' => 'success',
+                //     'image_url' => asset("storage/posts/{$imageName}")
+                // ]);
+
+                $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
+                $mimeType = $data['candidates'][0]['content']['parts'][0]['inlineData']['mimeType'] ?? 'image/png';
+
+                // This creates a "URL" that contains the image itself
+                $dataUrl = "data:{$mimeType};base64,{$base64}";
+
+                return response()->json([
+                    'status' => 'success',
+                    'image_url' => $dataUrl
+                ]);
+            }
+            // return response()->json(['error' => 'Generation Failed'], 500);
+        } catch (\Exception $e) {
+            return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
+        }
+
+        
+    }
+
 }

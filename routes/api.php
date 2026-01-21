@@ -33,6 +33,9 @@ Route::group(['prefix' => 'v1'], function () {
     //***********tiktok login********** */
     Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
     Route::get('/auth/tiktok/callback', [TikTokAuthController::class, 'callback']);
+
+    //******************* */
+    Route::post('gemini-image-generate',[AiPostGenerationController::class,'generateSlide']);
 });
 
 //****************************Admin Route **************************************** */

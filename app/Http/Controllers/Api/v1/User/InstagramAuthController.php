@@ -15,9 +15,16 @@ class InstagramAuthController extends ResponseController
         $query = http_build_query([
             'client_id' => Config::get('services.instagram.client_id'),
             'redirect_uri' => Config::get('services.instagram.redirect'),
-            'scope' => 'instagram_basic',
+           'scope'         => implode(',', [
+                'instagram_business_basic',
+                'instagram_business_content_publish',
+                'instagram_business_manage_comments',
+                'instagram_business_manage_insights',
+            ]),
             'response_type' => 'code',
+            'state'         => csrf_token(),
         ]); 
+        \Log::info('Instagram Auth Redirect URL:', $query);
         // dd('https://www.facebook.com/v19.0/dialog/oauth?' . $query);
         return redirect('https://www.facebook.com/v19.0/dialog/oauth?' . $query);
     }
@@ -39,12 +46,13 @@ class InstagramAuthController extends ResponseController
         );
 
         $accessToken = $tokenResponse['access_token'];
-
+        \Log::info('Instagram Auth Access Token:', $accessToken);
         $user = Http::get('https://graph.facebook.com/me', [
             'fields' => 'id,name,email',
             'access_token' => $accessToken,
         ]);
 
+        \Log::info('Instagram Auth User:', $user);
         // Create or login user
         $localUser = User::firstOrCreate(
             ['facebook_id' => $user['id']],

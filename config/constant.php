@@ -17,4 +17,8 @@ return [
         'key' => env('ANTHROPIC_API_KEY'),
     ],
 
+    'gemini_keys' => [
+        'key' => env('GEMINI_API_KEY'),
+    ],
+
 ];
