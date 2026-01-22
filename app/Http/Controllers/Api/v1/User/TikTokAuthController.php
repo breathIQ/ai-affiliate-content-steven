@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Config;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
-use App\Models\SocialAccount;
+use App\Models\{SocialAccount,User};
+use Illuminate\Support\Facades\Storage;
+use App\Helpers\Common;
 
 class TikTokAuthController extends ResponseController
 {
@@ -31,7 +33,10 @@ class TikTokAuthController extends ResponseController
         ]);
         \Log::info('TikTok Auth Redirect URL:', [$query]);
         // dd("https://www.tiktok.com/v2/auth/authorize/?{$query}");   
-        return redirect()->away("https://www.tiktok.com/v2/auth/authorize/?{$query}");
+        // return redirect()->away("https://www.tiktok.com/v2/auth/authorize/?{$query}");
+        
+        $authurl = "https://www.tiktok.com/v2/auth/authorize/?{$query}";
+        return $this->sendResponse($authurl, 'TikTok Auth url', 200);
     }
 
     public function callback(Request $request)
@@ -54,13 +59,13 @@ class TikTokAuthController extends ResponseController
             ]
         );
         \Log::info('TikTok Auth Response:', $response->json());
-        $data = $response->json('data');
-        \Log::info('TikTok Auth Data:', $data);
-
+        $data = $response->json();
+        \Log::info('TikTok Auth Data:', [$data]);
+        \Log::info('access_token:'.$data['access_token']);
         $userResponse =  Http::withHeaders([
             'Authorization' => 'Bearer '.$data['access_token'],
         ])->get('https://open.tiktokapis.com/v2/user/info/', [
-            'fields' => 'open_id,display_name,avatar_url,phone_number,email',
+            'fields' => 'open_id,display_name,avatar_url',
         ]);
         \Log::info('TikTok Auth User:', $userResponse->json());
         $user_data = $userResponse->json();
@@ -68,31 +73,33 @@ class TikTokAuthController extends ResponseController
         // Check if social account exists
         $social = SocialAccount::where([
             'provider' => 'tiktok',
-            'provider_user_id' => $user_data['open_id']
+            'provider_user_id' => $data['open_id']
         ])->first();    
 
         if ($social) {
             $user = $social->user;
         } else {
             // Try match by email
-            $user = User::where('email', $user_data['email'])->first();
+            //$user = User::where('email', $user_data['email'])->first();
 
-            if (!$user) {
+           // if (!$user) {
                 $user = User::create([
-                    'name' => $user_data['display_name'] ?? $user_data['nickname'],
-                    'email' => $user_data['email'],
-                    'avatar' => $user_data['avatar_url'],
+                    'name' =>  $user_data['data']['user']['display_name'] ?? NULL,
+                    'email' =>  $user_data['data']['user']['email'] ?? NUll,
+                    'avatar' =>  $this->getAvatarPath($user_data['data']['user']['avatar_url'] ?? null),
                     'password' => null, // social-only user
                     'status' => Config::get('constant.status.Active'),
                     'joined_by' => 'TikTok',
+                    'role_id' => Common::getRoleId('User'),
+                    'affiliate_id' => Common::generateUniqueAffiliateId($user_data['data']['user']['display_name'] ?? null),
                 ]);
-            }
+           // }
 
             SocialAccount::create([
                 'user_id' => $user->id,
                 'provider' => 'tiktok',
-                'provider_user_id' => $user_data['open_id'],
-                'username' => $user_data['display_name'] ?? $user_data['nickname'],
+                'provider_user_id' => $data['open_id'],
+                'username' =>  $user_data['data']['user']['display_name'] ?? NULL,
                 'access_token' => $data['access_token'],
                 'refresh_token' => $data['refresh_token'],
                 'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 0),
@@ -102,8 +109,11 @@ class TikTokAuthController extends ResponseController
         $token = $user->createToken('api_token')->plainTextToken;
         $user['access_token'] = $token;
 
-        return $this->sendResponse($user, 'TikTok Auth successful', 200);
-        // store access_token, refresh_token, open_id
+        // return $this->sendResponse($user, 'TikTok Auth successful', 200);
+        
+        $jsonData = urlencode(json_encode($user));
+        $frontendUrl ='http://localhost:3000/login?user=' . $jsonData;
+        return redirect()->away($frontendUrl);
     }
 
     private function generatePkce()
@@ -117,6 +127,25 @@ class TikTokAuthController extends ResponseController
         ), '=');
 
         return [$verifier, $challenge];
+    }
+    
+    private function getAvatarPath($avatarUrl)
+    {
+        $avatarPath = null;
+
+        if ($avatarUrl) {
+            $response = Http::timeout(10)->get($avatarUrl);
+        
+            if ($response->successful()) {
+                $filename = time() . '_tiktok.jpg';
+        
+                $path = 'uploads/avatars/' . $filename;
+        
+                Storage::disk('public')->put($path, $response->body());
+                $avatarPath = $path;
+            }
+        }
+        return $avatarPath;
     }
 
 }
