@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-            $table->string('provider')->unique(); // instagram, tiktok
+            $table->string('provider'); // instagram, tiktok
             $table->string('provider_user_id')->unique(); // unique ID from provider
             $table->string('username')->nullable();
             $table->string('access_token')->nullable();
