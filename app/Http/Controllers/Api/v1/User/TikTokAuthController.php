@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Cache;
 use App\Models\{SocialAccount,User};
 use Illuminate\Support\Facades\Storage;
 use App\Helpers\Common;
+use Illuminate\Support\Facades\Auth;
+
 
 class TikTokAuthController extends ResponseController
 {
@@ -78,6 +80,13 @@ class TikTokAuthController extends ResponseController
 
         if ($social) {
             $user = $social->user;
+
+            //update access token
+            $social->update([
+                'access_token' => $data['access_token'],
+                'refresh_token' => $data['refresh_token'],
+                'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 0),
+            ]);
         } else {
             // Try match by email
             //$user = User::where('email', $user_data['email'])->first();
@@ -147,5 +156,97 @@ class TikTokAuthController extends ResponseController
         }
         return $avatarPath;
     }
+
+    public function redirectToTikTok(Request $request)
+    {
+        $user = Auth::user();
+        $state = encrypt($user->id);
+        [$verifier, $challenge] = $this->generatePkce();
+        cache()->put(
+            'tiktok_code_verifier_'.$state,
+            $verifier,
+            now()->addMinutes(10)
+        );
+
+
+        $query = http_build_query([
+            'client_key' => Config::get('services.tiktok.client_key'),
+            'response_type' => 'code',
+            'scope' => 'user.info.basic',
+            'redirect_uri' => Config::get('services.tiktok.link_redirect'),
+            'code_challenge' => $challenge,
+            'code_challenge_method' => 'S256',
+            'state' => $state, // IMPORTANT
+        ]);
+        Log::info('TikTok Auth link url: '.$query);
+        // return redirect('https://www.tiktok.com/v2/auth/authorize?'.$query);
+        $authurl = "https://www.tiktok.com/v2/auth/authorize/?{$query}";
+        return $this->sendResponse($authurl, 'TikTok Auth link url', 200);
+    }
+
+    public function handleTikTokLinkCallback(Request $request)
+    {
+        if ($request->error) {
+            throw new Exception($request->error_description ?? 'TikTok link failed');
+        }
+
+        $userId = decrypt($request->state);
+        $user = User::findOrFail($userId);
+        Log::info('TikTok link callback request: '.$request->all());
+        $codeVerifier = cache()->pull('tiktok_code_verifier_'.$user->id);
+        if (!$codeVerifier) {
+            throw new Exception('Invalid or expired TikTok session');
+        }
+
+        $tokenResponse = Http::asForm()->post(
+            'https://open.tiktokapis.com/v2/oauth/token/',
+            [
+                'client_key' => Config::get('services.tiktok.client_key'),
+                'client_secret' => Config::get('services.tiktok.client_secret'),
+                'code' => $request->code,
+                'grant_type' => 'authorization_code',
+                'redirect_uri' => Config::get('services.tiktok.link_redirect'),
+                'code_verifier' => $codeVerifier,
+            ]
+        )->json();
+        
+        Log::info('TikTok link callback token response: '.$tokenResponse);
+        $userInfo = Http::withHeaders([
+            'Authorization' => 'Bearer '.$tokenResponse['access_token'],
+        ])->get('https://open.tiktokapis.com/v2/user/info/', [
+            'fields' => 'open_id,display_name,avatar_url',
+        ])->json();
+        
+        Log::info('TikTok link callback user info: '.$userInfo);
+        $tiktokUser = $userInfo['data']['user'];
+        $openId = $tiktokUser['open_id'];
+    
+        $alreadyLinked = SocialAccount::where('provider', 'tiktok')
+            ->where('provider_user_id', $openId)
+            ->where('user_id', '!=', $user->id)
+            ->exists();
+        Log::info('TikTok link callback already linked: '.$alreadyLinked);
+        if ($alreadyLinked) {
+            throw new Exception('This TikTok account is already linked to another user.');
+        }
+
+        $social = SocialAccount::updateOrCreate(
+            [
+                'provider' => 'tiktok',
+                'provider_user_id' => $openId,
+            ],
+            [
+                'user_id' => $user->id,
+                'access_token' => $tokenResponse['access_token'],
+                'refresh_token' => $tokenResponse['refresh_token'],
+                'token_expires_at' => now()->addSeconds($tokenResponse['expires_in'] ?? 0),
+            ]
+        );
+        
+        Log::info('TikTok link callback social: '.$social);
+        return $this->sendResponse($social, 'TikTok account linked successfully', 200);
+    }
+
+
 
 }

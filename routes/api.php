@@ -34,6 +34,8 @@ Route::group(['prefix' => 'v1'], function () {
     Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
     Route::get('/auth/tiktok/callback', [TikTokAuthController::class, 'callback']);
 
+    
+
     //******************* */
     Route::post('gemini-image-generate',[AiPostGenerationController::class,'generateSlide']);
 });
@@ -111,6 +113,10 @@ Route::group(['prefix' => 'v1/user'], function () {
 
         //******************Ai Post Generation Route************************************ */
         Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent']);
+
+        //***********tiktok account link********** */
+        Route::get('/tiktok/link', [TikTokAuthController::class, 'redirectToTikTok']);
+        Route::get('/tiktok/link/callback', [TikTokAuthController::class, 'handleTikTokLinkCallback']);
 
     });
 });

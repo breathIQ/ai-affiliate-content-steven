@@ -163,19 +163,35 @@ class PublishPostToSocialMedia implements ShouldQueue
         $video = $this->post->media()->where('media_type', 'video')->first();
         if (!$video) throw new Exception("TikTok requires a video file.");
 
-        $url = asset(Storage::url($video->media_path));
+        // $url = asset(Storage::url($video->media_path));
+        $url =  'https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/posts/media/w0vp3jeS8hdsPUobfACCBoke4sOHEx78gTo9EJmp.mp4';
+
         \Log::info("TikTok account published section: video url: " . $url);
-        $response = Http::withToken($account->access_token)
-            ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
-                "post_info" => [
-                    "caption" => $this->getFormattedCaption('tiktok'),
-                    "privacy_level" => "PUBLIC_TO_EVERYONE"
-                ],
-                "source_info" => [
-                    "source" => "PULL_FROM_URL",
-                    "video_url" => $url
-                ]
-            ]);
+        // $response = Http::withToken($account->access_token)
+        //     ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
+        //         "post_info" => [
+        //             "caption" => $this->getFormattedCaption('tiktok'),
+        //             "privacy_level" => "PUBLIC_TO_EVERYONE"
+        //         ],
+        //         "source_info" => [
+        //             "source" => "PULL_FROM_URL",
+        //             "video_url" => $url
+        //         ]
+        //     ]);
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer '.$account->access_token,
+            'Content-Type'  => 'application/json',
+        ])->post('https://open.tiktokapis.com/v2/post/publish/video/init/', [
+            "post_info" => [
+                "caption" => $this->getFormattedCaption('tiktok'),
+                "privacy_level" => "PUBLIC_TO_EVERYONE"
+            ],
+            "source_info" => [
+                "source" => "PULL_FROM_URL",
+                "video_url" => $url
+            ]
+        ]);
         \Log::info("TikTok account published section: response: " . $response->body());
         if ($response->failed()) throw new Exception("TikTok API Error: " . $response->body());
         return $response->json();
