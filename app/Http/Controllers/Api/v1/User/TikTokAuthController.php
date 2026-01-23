@@ -112,7 +112,7 @@ class TikTokAuthController extends ResponseController
         // return $this->sendResponse($user, 'TikTok Auth successful', 200);
         
         $jsonData = urlencode(json_encode($user));
-        $frontendUrl ='http://localhost:3000/login?user=' . $jsonData;
+        $frontendUrl = Config::get('constant.frontend_url').'/login?user=' . $jsonData;
         return redirect()->away($frontendUrl);
     }
 

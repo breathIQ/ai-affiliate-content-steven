@@ -21,4 +21,10 @@ return [
         'key' => env('GEMINI_API_KEY'),
     ],
 
+    'instagram_user_access_token' => [
+        'token' => env('INSTAGRAM_USER_ACCESS_TOKEN'),
+    ],
+
+    'frontend_url' => env('FRONTEND_URL'),
+
 ];
