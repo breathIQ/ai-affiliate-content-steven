@@ -13,6 +13,9 @@ use App\Models\{SocialAccount,User};
 use Illuminate\Support\Facades\Storage;
 use App\Helpers\Common;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Exception;
+
 
 
 class TikTokAuthController extends ResponseController
@@ -162,12 +165,12 @@ class TikTokAuthController extends ResponseController
         $user = Auth::user();
         $state = encrypt($user->id);
         [$verifier, $challenge] = $this->generatePkce();
-        cache()->put(
-            'tiktok_code_verifier_'.$state,
-            $verifier,
-            now()->addMinutes(10)
-        );
-
+    //   Cache::put(
+    //         'tiktok_code_verifier_'.$state,
+    //         $verifier,
+    //         now()->addMinutes(10)
+    //     );
+        Cache::put('tiktok_code_verifier_'.$state, $verifier, now()->addMinutes(10));
 
         $query = http_build_query([
             'client_key' => Config::get('services.tiktok.client_key'),
@@ -191,9 +194,11 @@ class TikTokAuthController extends ResponseController
         }
 
         $userId = decrypt($request->state);
+        Log::info('TikTok link user_id: '.$userId);
         $user = User::findOrFail($userId);
-        Log::info('TikTok link callback request: '.$request->all());
-        $codeVerifier = cache()->pull('tiktok_code_verifier_'.$user->id);
+        Log::info('TikTok link callback request: ',[$request->all()]);
+        $codeVerifier = Cache::pull('tiktok_code_verifier_'.$request->state);
+         Log::info('TikTok link callback request codeverifier: '.$codeVerifier);
         if (!$codeVerifier) {
             throw new Exception('Invalid or expired TikTok session');
         }
@@ -210,14 +215,14 @@ class TikTokAuthController extends ResponseController
             ]
         )->json();
         
-        Log::info('TikTok link callback token response: '.$tokenResponse);
+        Log::info('TikTok link callback token response: ',[$tokenResponse]);
         $userInfo = Http::withHeaders([
             'Authorization' => 'Bearer '.$tokenResponse['access_token'],
         ])->get('https://open.tiktokapis.com/v2/user/info/', [
             'fields' => 'open_id,display_name,avatar_url',
         ])->json();
         
-        Log::info('TikTok link callback user info: '.$userInfo);
+        Log::info('TikTok link callback user info: ',[$userInfo]);
         $tiktokUser = $userInfo['data']['user'];
         $openId = $tiktokUser['open_id'];
     
@@ -227,7 +232,12 @@ class TikTokAuthController extends ResponseController
             ->exists();
         Log::info('TikTok link callback already linked: '.$alreadyLinked);
         if ($alreadyLinked) {
-            throw new Exception('This TikTok account is already linked to another user.');
+            // throw new Exception('This TikTok account is already linked to another user.');
+            $linkResponse['status'] = false;
+            $linkResponse['message'] = "This TikTok account is already linked to another user.";
+            $jsonData = urlencode(json_encode($linkResponse));
+            $frontendUrl = Config::get('constant.frontend_url').'/u/dashboard?linkResponse=' . $jsonData;
+            return redirect()->away($frontendUrl);
         }
 
         $social = SocialAccount::updateOrCreate(
@@ -237,6 +247,7 @@ class TikTokAuthController extends ResponseController
             ],
             [
                 'user_id' => $user->id,
+                'username' =>  $tiktokUser['display_name'] ?? NULL,
                 'access_token' => $tokenResponse['access_token'],
                 'refresh_token' => $tokenResponse['refresh_token'],
                 'token_expires_at' => now()->addSeconds($tokenResponse['expires_in'] ?? 0),
@@ -244,7 +255,12 @@ class TikTokAuthController extends ResponseController
         );
         
         Log::info('TikTok link callback social: '.$social);
-        return $this->sendResponse($social, 'TikTok account linked successfully', 200);
+        // return $this->sendResponse($social, 'TikTok account linked successfully', 200);
+        $linkResponse['status'] = True;
+        $linkResponse['message'] = "TikTok account linked successfully.";
+        $jsonData = urlencode(json_encode($linkResponse));
+        $frontendUrl = Config::get('constant.frontend_url').'/u/dashboard?linkResponse=' . $jsonData;
+        return redirect()->away($frontendUrl);
     }
 
 

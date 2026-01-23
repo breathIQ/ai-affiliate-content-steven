@@ -28,7 +28,9 @@ Route::group(['prefix' => 'v1'], function () {
 
     //***********instagram login********** */
     Route::get('/auth/instagram/redirect', [InstagramAuthController::class, 'redirect']);
-    Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'callback']);
+    Route::get('/auth/instagram/callback', [InstagramAuthController::class, 'handleCallback']);
+    
+    // Route::get('/auth/instagram/callback-direct', [InstagramAuthController::class, 'handleCallback']);
 
     //***********tiktok login********** */
     Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
@@ -89,6 +91,8 @@ Route::group(['prefix' => 'v1/user'], function () {
     Route::get('/affiliate-click/{post_id}/{affiliate_id}', [AffiliateClickController::class, 'track']);
 
     Route::post('/save-remote-file', [AffiliateClickController::class, 'saveRemoteFile']);
+    
+    Route::get('/tiktok/link/callback', [TikTokAuthController::class, 'handleTikTokLinkCallback']);
 
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
@@ -116,7 +120,7 @@ Route::group(['prefix' => 'v1/user'], function () {
 
         //***********tiktok account link********** */
         Route::get('/tiktok/link', [TikTokAuthController::class, 'redirectToTikTok']);
-        Route::get('/tiktok/link/callback', [TikTokAuthController::class, 'handleTikTokLinkCallback']);
+        
 
     });
 });
