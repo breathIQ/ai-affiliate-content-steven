@@ -92,7 +92,9 @@ Route::group(['prefix' => 'v1/user'], function () {
 
     Route::post('/save-remote-file', [AffiliateClickController::class, 'saveRemoteFile']);
     
+    //*************social media link callback*************************** */
     Route::get('/tiktok/link/callback', [TikTokAuthController::class, 'handleTikTokLinkCallback']);
+    Route::get('/instagram/link/callback', [InstagramAuthController::class, 'handleInstagramLinkCallback']);
 
 
     Route::group(['middleware' => ['auth:sanctum', UserMiddleware::class]], function () {
@@ -120,6 +122,9 @@ Route::group(['prefix' => 'v1/user'], function () {
 
         //***********tiktok account link********** */
         Route::get('/tiktok/link', [TikTokAuthController::class, 'redirectToTikTok']);
+
+        //***********instagram account link********** */
+        Route::get('/instagram/link', [InstagramAuthController::class, 'redirectToInstagramLink']);
         
 
     });

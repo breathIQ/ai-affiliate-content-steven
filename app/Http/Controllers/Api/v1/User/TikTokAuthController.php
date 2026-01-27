@@ -190,7 +190,12 @@ class TikTokAuthController extends ResponseController
     public function handleTikTokLinkCallback(Request $request)
     {
         if ($request->error) {
-            throw new Exception($request->error_description ?? 'TikTok link failed');
+            // throw new Exception($request->error_description ?? 'TikTok link failed');
+            $linkResponse['status'] = false;
+            $linkResponse['message'] = "TikTok link failed.";
+            $jsonData = urlencode(json_encode($linkResponse));
+            $frontendUrl = Config::get('constant.frontend_url').'/u/dashboard?linkResponse=' . $jsonData;
+            return redirect()->away($frontendUrl);
         }
 
         $userId = decrypt($request->state);
