@@ -10,7 +10,10 @@ use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Str;
 use App\Models\{SocialAccount,User};
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
 use App\Helpers\Common;
+use Illuminate\Support\Facades\Log;
+use Exception;
 
 class InstagramAuthController extends ResponseController
 {
