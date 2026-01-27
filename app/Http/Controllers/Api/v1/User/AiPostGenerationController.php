@@ -11,6 +11,7 @@ use OpenAI\Laravel\Facades\OpenAI;
 use App\Models\Chapter;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Storage;
 
 class AiPostGenerationController extends ResponseController
 {
@@ -73,13 +74,7 @@ class AiPostGenerationController extends ResponseController
     {
         
       // AI ko specific format sikhane ke liye prompt
-        $systemInstruction = "You are an expert social media content creator. 
-        Based on the chapter content '{$chapter->content}', generate a high-quality post.
-        You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
-        'caption': A catchy caption with emojis.
-        'hashtags': A string of 10-15 trending hashtags as comma separated values.
-        'script': A short video script.
-        'title': A scroll-stopping headline.";
+        $systemInstruction = $this->getSystemInstruction($chapter);
 
         try {
             $result = OpenAI::chat()->create([
@@ -95,15 +90,16 @@ class AiPostGenerationController extends ResponseController
             if (!$rawContent) {
                 throw new \Exception("AI returned empty content.");
             }
-
+            // dd($rawContent);
             $structuredData = json_decode($rawContent, true);
             if (is_null($structuredData)) {
                 // Agar JSON invalid hai toh manually handle karein ya error dein
                 throw new \Exception("Invalid JSON format received from AI.");
             }
-
+            // dd($structuredData);
             /** ------------------ IMAGE GENERATION ------------------ */
-            $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
+            // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
 
             /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
@@ -130,13 +126,7 @@ class AiPostGenerationController extends ResponseController
     private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $slideTexts, $design)
     {
         // System Instruction for structured output like your UI
-        $systemInstruction = "You are an expert social media content creator. 
-        Based on the chapter content '{$chapter->content}', generate a high-quality post.
-        You MUST respond ONLY in valid JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations, with these exact keys:
-        'caption': A catchy caption with emojis.
-        'hashtags': A string of 10-15 trending hashtags as comma separated values.
-        'script': A short video script.
-        'title': A scroll-stopping headline.";
+        $systemInstruction = $this->getSystemInstruction($chapter);
             // dd(Config::get('constant.claud_keys.key'));
         try {
             $response = Http::withHeaders([
@@ -175,7 +165,8 @@ class AiPostGenerationController extends ResponseController
             }
 
             // --- NEW: Image Generation --- 
-            $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
+            // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -203,14 +194,16 @@ class AiPostGenerationController extends ResponseController
         $response = OpenAI::images()->create([
             'model' => $model,
             'prompt' => $prompt,
-            'size' => '1024x1024',
+            'size' => '1024x1792', // portrait
             'quality' => 'standard',
+        ], [
+            'timeout' => 120, // ⬅️ IMPORTANT
         ]);
 
         return $response->data[0]->url; // Temporary URL from OpenAI
     }
 
-    private function buildSlideImagePrompt($title, $slideText, $design, $slideNumber)
+    private function buildSlideImagePrompt($chapter, $slideText, $design, $slideNumber)
     {
         // $designPrompt = '';
 
@@ -224,71 +217,141 @@ class AiPostGenerationController extends ResponseController
         //     ";
         // }
 
-        // return "
-        //     Create a high-quality image.
+        $image = asset(Storage::url('assets/cover-image.png'));
 
-        //     Image concept:
-        //     '{$title}'
+        // $imagePrompt = "
+        //     Create a high-quality, professional image that uses the provided image **{$image}** as the background. 
+        //     The background should be simple, abstract, and high-contrast but should **not** overpower the text. 
+        //     The text must remain clear, legible, and highly visible against the background image.
 
-        //     The image MUST contain the following overlay text exactly:
+
+        //     **PRIMARY OBJECTIVE:**
+        //     The image must display the following text exactly as written, without any changes, paraphrasing, or omissions:
+
+        //     **TEXT TO DISPLAY (EXACTLY AS WRITTEN):**
+        //     {$slideText}
+
+        //     **DESIGN STYLE:**
+        //     - Clean, modern, and professional.
+        //     - Font: {$design['font_family']}
+        //     - Font Weight: {$design['font_weight']}
+        //     - Font Size: {$design['font_size']} (Follow text hierarchy as per the design).
+        //     - Text Placement: {$design['text_placement']} (Ensure proper alignment and positioning as specified).
+        //     - Contrast: High contrast between text and background to ensure readability.
+        //     - Overlay Color Theme: {$design['overlay_color']} (Ensure a consistent theme and balance with the background).
+
+        //     **BACKGROUND & IMAGE CONCEPT:**
+        //     - Visual concept inspired by: '{$chapter->chapter_title}'
+        //     - The background should be minimalistic and neutral, enhancing readability of the text without distracting from it.
+        //     - Avoid any overly detailed or complex imagery that could overshadow the text.
+        //     - The background serves only to support the legibility and visibility of the text.
+
+        //     **STRICT NEGATIVE RULES (MUST BE FOLLOWED):**
+        //     - **No handwritten fonts.**
+        //     - **No decorative or artistic fonts.**
+        //     - **No distorted, warped, blurry, or curved text.**
+        //     - **No additional text, captions, watermarks, logos, or symbols.**
+        //     - **Do not summarize, paraphrase, or reinterpret the text.**
+
+        //     **FORMAT:**
+        //     - Aspect ratio: 9:16 (portrait mode).
+        //     - Resolution: High-quality resolution suitable for professional presentation.
+
+        // ";
+        
+        //************2nd prompt******************** */
+        // $imagePrompt = "
+        //     Create a high-quality image and use the {$image} image as background image.
+        //     Simple abstract background.High contrast, professional style (NOT an abstract illustration).
+
+        //     PRIMARY OBJECTIVE (DO NOT IGNORE):
+        //     The image must clearly and legibly display the following text EXACTLY as written, with no changes, no paraphrasing, and no missing words:
+
+        //     TEXT TO DISPLAY (EXACT):
         //     '{$slideText}'
 
-        //     {$designPrompt}
+        //     DESIGN STYLE:
+        //     - Clean, modern, professional image
+           
+        //     - Font family: {$design['font_family']}
+        //     - Font weight: {$design['font_weight']}
+        //     - Text hierarchy: {$design['font_size']}
+        //     - Text placement: {$design['text_placement']}
+        //     - Strong contrast between text and background
+        //     - Overlay color theme: {$design['overlay_color']}
 
-        //     Additional instructions for text:
-        //     - Use clean, bold, sans-serif fonts only (e.g., Arial, Helvetica, Poppins)
-        //     - Text must be in clear, US English characters
-        //     - No distorted, blurry, or handwritten text
-        //     - Text color must contrast strongly against the background for maximum readability
-        //     - No artistic or decorative fonts
-        //     - The overlay text should be centered and spaced for easy reading
+        //     BACKGROUND & IMAGE CONCEPT:
+        //     - Visual concept inspired by: '{$chapter->chapter_title}'
+        //     - Background must be minimal and must NOT overpower the text
+        //     - Background exists only to support readability
 
-        //     Additional rules:
-        //     - Clean, modern, professional social media design
-        //     - No watermark, no logos, no extra text
-        //     - 4:5 aspect ratio
+        //     STRICT NEGATIVE RULES:
+        //     - No handwritten fonts
+        //     - No decorative or artistic fonts
+        //     - No distorted, warped, blurry, or curved text
+        //     - No extra text, captions, watermarks, logos, or symbols
+        //     - Do NOT rewrite, summarize, or reinterpret the text
+
+        //     FORMAT:
+        //     - Aspect ratio: 4:5
+        //     - High resolution
+
         // ";
 
-        return "
-            Create a high-quality minimal background image No text, no letters, no numbers, no symbols.
-            Simple abstract background.High contrast, professional style (NOT an abstract illustration).
+        $imagePrompt = "
+            Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
 
-            PRIMARY OBJECTIVE (DO NOT IGNORE):
-            The image must clearly and legibly display the following text EXACTLY as written, with no changes, no paraphrasing, and no missing words:
+            Visual style: clinical
+            Mood: intelligent, calm, modern, educational
+            Audience tone: clinicians
+            Angle: clinical
 
-            TEXT TO DISPLAY (EXACT):
-            '{$slideText}'
+            Subject:
+            An abstract, artistic representation of the \"{$chapter->chapter_title}\".
+            No explicit organs. No medical procedures. No disease depiction.
 
-            DESIGN STYLE:
-            - Clean, modern, professional image
-           
-            - Font family: {$design['font_family']}
-            - Font weight: {$design['font_weight']}
-            - Text hierarchy: {$design['font_size']}
-            - Text placement: {$design['text_placement']}
-            - Strong contrast between text and background
-            - Overlay color theme: {$design['overlay_color']}
+            Composition:
+            Clean layout with strong visual hierarchy.
+            At least 40% negative space reserved for text overlay.
+            Center or upper-third visual focus.
+            No clutter.
 
-            BACKGROUND & IMAGE CONCEPT:
-            - Visual concept inspired by: '{$title}'
-            - Background must be minimal and must NOT overpower the text
-            - Background exists only to support readability
+            Color palette:
+            Muted scientific tones with subtle cinematic lighting.
+            Cool blues and deep shadows with soft glow accents.
 
-            STRICT NEGATIVE RULES:
-            - No handwritten fonts
-            - No decorative or artistic fonts
-            - No distorted, warped, blurry, or curved text
-            - No extra text, captions, watermarks, logos, or symbols
-            - Do NOT rewrite, summarize, or reinterpret the text
+            Rendering style:
+            High-quality cinematic scientific illustration with depth and atmosphere.
+            Not photorealistic.
+            Not cartoonish.
+            Not surreal.
 
-            FORMAT:
-            - Aspect ratio: 4:5
-            - High resolution
+            Technical requirements:
+            Portrait orientation, 9:16 aspect ratio.
+            High resolution suitable for 1080x1920 output.
 
+            NO text, NO words, NO letters, NO numbers.
+            NO logos, NO branding, NO watermarks.
+            NO social media UI elements.
+            NO medical equipment, hospitals, syringes, needles.
+            NO diseases, injuries, pain, suffering.
+            NO labeled organs.
+            NO exaggerated anatomy.
+            NO before-and-after visuals.
+            NO dramatic or sensational imagery.
+
+            Place the Heading on the generated image : \"The Carbonated Body\"
+            Place the chapter name on the generated image : \"{$chapter->chapter}\"
+            Place the chapter title on the generated image : \"{$chapter->chapter_title}\"
+            Write 5-6 Bullet points on image extract from provided chapter content : {$chapter->content}. 
+
+            Place the book cover on the generated image as a thumbnail on the generated image. cover book is uploade here \"{$image}\".   
         ";
+
+        return $imagePrompt;
     }
 
-    private function getImages($caption, $postType, $slidesCount, $slideTexts, $design)
+    private function getImages($chapter, $postType, $slidesCount, $slideTexts, $design)
     {
         $images = [];
 
@@ -299,7 +362,7 @@ class AiPostGenerationController extends ResponseController
                 $slideText = $slideTexts[$i] ?? null;
 
                 $imagePrompt = $this->buildSlideImagePrompt(
-                    $caption,
+                    $chapter,
                     $slideText,
                     $design,
                     $i + 1
@@ -319,7 +382,7 @@ class AiPostGenerationController extends ResponseController
             if ($slideText) {
                 // Single with text
                 $imagePrompt = $this->buildSlideImagePrompt(
-                    $caption,
+                    $chapter,
                     $slideText,
                     $design,
                     1
@@ -330,7 +393,7 @@ class AiPostGenerationController extends ResponseController
                 Create a high-quality social media post image.
 
                 Image concept:
-                '{$caption}'
+                '{$chapter->chapter_title}'
 
                 Design style:
                 - Modern
@@ -354,6 +417,8 @@ class AiPostGenerationController extends ResponseController
 
     public function generateSlide(Request $request) 
     {
+        $image = asset(Storage::url('assets/cover-image.png'));
+        // dd($image);
         $apiKey = Config::get('constant.gemini_keys.key');
     //    dd($apiKey);
         // Your requirement variables
@@ -417,5 +482,61 @@ class AiPostGenerationController extends ResponseController
 
         
     }
+
+    private function getSystemInstruction($chapter)
+    {
+        // $systemInstruction = "
+        //     You are a professional social media content engine for a science book titled 'The Carbonated Body'.
+
+        //     Your task is to generate SHORT-FORM social media content for Instagram and TikTok posts, 
+        //     based on provided user prompt using chapter content:'$chapter->content'
+        
+        //     IMPORTANT RULES (MANDATORY):
+        //     - Respond with RAW JSON only.
+        //     - Do not include any introductory text, markdown formatting (like ```json)
+        //     - First character must be { and last character must be }.
+        //     - Do NOT include markdown, explanations, comments, or extra text.
+        //     - Do not use medical or clinical language.
+        //     - Do not use words like cure, treat, heal, prevent, fix, reduce symptoms, improve condition.
+        //     - Content must be educational only, not medical advice.
+        //     - Assume all text will be rendered on a 9:16 image — keep text concise and readable.
+        //     - Do NOT invent facts beyond the chapter content provided.
+
+        //     CONTENT CONSTRAINTS:
+        //     - Title: max 42 characters
+        //     - Bullets: 3–5 bullets, each max 68 characters each bullet should be unique
+        //     - Caption: max 2 short sentences, emojis allowed
+        //     - Script: max 5 short spoken lines (voiceover-friendly)
+
+        //     STYLE RULES:
+        //     - Tone depends on provided angle and audience
+        //     - Clear, confident, non-sensational language
+        //     - No em dashes (—)
+        //     - Avoid hype words like 'miracle', 'secret', 'hack'
+        //     - No hype, no guarantees
+
+        //     OUTPUT FORMAT (JSON ONLY):
+        //     {
+        //         'title': 'Short headline',
+        //         'bullets': [],
+        //         'caption': '',
+        //         'script': '',
+        //         'cta': '',
+        //         'hashtags': ''
+        //     }
+        //     Note:- You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations
+        // ";
+
+        $systemInstruction = "You are a professional social media content engine for a science book titled 'The Carbonated Body'. 
+        Based on the chapter content '{$chapter->content}', generate a high-quality post social media content for Instagram and TikTok posts.
+        You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
+        'caption': A catchy caption with emojis.
+        'hashtags': A string of 10-15 trending hashtags as comma separated values.
+        'script': A short video script.
+        'title': A scroll-stopping headline.";
+        
+        return $systemInstruction;
+    }
+    
 
 }

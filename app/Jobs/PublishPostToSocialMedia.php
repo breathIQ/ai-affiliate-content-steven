@@ -72,13 +72,14 @@ class PublishPostToSocialMedia implements ShouldQueue
 
     private function publishToInstagram($account)
     {
+        \Log::info("Instagram account details: ". $account);
         $mediaItems = $this->post->media()->orderBy('media_order')->get();
-        // $token = $account->access_token;
-        // $igId = $account->provider_user_id ;
+        $token = $account->access_token;
+        $igId = $account->provider_user_id ;
         \Log::info("Instagram account published section:");
-        $getCredential = $this->getCredential();    //only for testing while real user not signup through instagram
-        $token = $getCredential['data'][0]['access_token'];
-        $igId = $getCredential['data'][0]['instagram_business_account']['id'];
+        // $getCredential = $this->getCredential();    //only for testing while real user not signup through instagram
+        // $token = $getCredential['data'][0]['access_token'];
+        // $igId = $getCredential['data'][0]['instagram_business_account']['id'];
 
         if ($mediaItems->count() > 1) {
             // Carousel Flow
@@ -102,8 +103,8 @@ class PublishPostToSocialMedia implements ShouldQueue
 
     private function createIgContainer($igId, $token, $media, $isCarouselItem)
     {
-        $url =  asset(Storage::url($media->media_path));
-        // $url =  'https://oaidalleapiprodscus.blob.core.windows.net/private/org-1PEkHWEBzTqfI9C4kUbWgcxU/user-pT8F2pFootq2dQJPc7oUmO1p/img-6OnW12kK4JVdFwYjqfnkITfT.png?st=2026-01-22T15%3A09%3A57Z&se=2026-01-22T17%3A09%3A57Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=38e27a3b-6174-4d3e-90ac-d7d9ad49543f&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-22T15%3A27%3A07Z&ske=2026-01-23T15%3A27%3A07Z&sks=b&skv=2024-08-04&sig=Z3z9J8/jGqHrcuaoAZa1aItqiFQgVO5R5Gx2Is65/j8%3D';
+        //$url =  asset(Storage::url($media->media_path));
+        $url =  'https://oaidalleapiprodscus.blob.core.windows.net/private/org-1PEkHWEBzTqfI9C4kUbWgcxU/user-pT8F2pFootq2dQJPc7oUmO1p/img-C17UAWdxbsFqCU5zWQ4FrwML.png?st=2026-01-27T13%3A12%3A59Z&se=2026-01-27T15%3A12%3A59Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=38e27a3b-6174-4d3e-90ac-d7d9ad49543f&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-27T12%3A58%3A39Z&ske=2026-01-28T12%3A58%3A39Z&sks=b&skv=2024-08-04&sig=D7k3jjuEzDpwn6w2RE/jxX5qbRK%2BGbt2E9a1djdrxIA%3D';
         //$url =  'https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/posts/media/w0vp3jeS8hdsPUobfACCBoke4sOHEx78gTo9EJmp.mp4';
         \Log::info("Instagram account published section: createIgContainer");
         $fullCaption = $this->getFormattedCaption('instagram');
@@ -124,7 +125,8 @@ class PublishPostToSocialMedia implements ShouldQueue
             $params['image_url'] = $url;
         }
 
-        $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", $params);
+        // $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", $params);
+        $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", $params);
         \Log::info("Instagram account published section: createIgContainer response: " . $response->body());
         if ($response->failed()) throw new Exception("IG Container Error: " . $response->body());
         
@@ -134,7 +136,14 @@ class PublishPostToSocialMedia implements ShouldQueue
     private function createIgCarouselMaster($igId, $token, $itemIds)
     {
         \Log::info("Instagram account published section: createIgCarouselMaster");
-        $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", [
+        // $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", [
+        //     'media_type' => 'CAROUSEL',
+        //     'children' => implode(',', $itemIds),
+        //     'caption' => $this->getFormattedCaption('instagram'),
+        //     'access_token' => $token,
+        // ]);
+
+        $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", [
             'media_type' => 'CAROUSEL',
             'children' => implode(',', $itemIds),
             'caption' => $this->getFormattedCaption('instagram'),
@@ -148,7 +157,12 @@ class PublishPostToSocialMedia implements ShouldQueue
     private function finalizeIgPublish($igId, $token, $containerId)
     {
         \Log::info("Instagram account published section: finalizeIgPublish");
-        $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media_publish", [
+        // $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media_publish", [
+        //     'creation_id' => $containerId,
+        //     'access_token' => $token,
+        // ]);
+        
+        $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media_publish", [
             'creation_id' => $containerId,
             'access_token' => $token,
         ]);
@@ -238,7 +252,12 @@ class PublishPostToSocialMedia implements ShouldQueue
         do {
             sleep(3);
 
-            $response = Http::get("https://graph.facebook.com/v19.0/{$containerId}", [
+            // $response = Http::get("https://graph.facebook.com/v19.0/{$containerId}", [
+            //     'fields' => 'status_code',
+            //     'access_token' => $token,
+            // ]);
+
+            $response = Http::get("https://graph.instagram.com/v19.0/{$containerId}", [
                 'fields' => 'status_code',
                 'access_token' => $token,
             ]);
