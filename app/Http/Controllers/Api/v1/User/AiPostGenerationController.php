@@ -17,6 +17,7 @@ class AiPostGenerationController extends ResponseController
 {
     public function generateContent(Request $request)
     {
+    //    dd(Config::get('constant.open_ai_keys.key'));
         $validator = Validator::make($request->all(), [
             'chapter' => 'required|exists:chapters,id',
             'model'   => 'required|string', // e.g., 'gpt-4-turbo', 'claude-3-haiku-20240307'
@@ -47,7 +48,7 @@ class AiPostGenerationController extends ResponseController
         // $chapter = Chapter::find($request->chapter);
         $chapter = Chapter::join('book_chapters', 'chapters.chapter', '=', 'book_chapters.chapter')
             ->where('chapters.id', $request->chapter)
-            ->select('chapters.id', 'chapters.chapter', 'book_chapters.chapter_title as chapter_title')
+            ->select('chapters.id', 'chapters.chapter','chapters.content', 'book_chapters.chapter_title as chapter_title')
             ->first();
         $modelChoice = $request->model;
         $userPrompt = $request->prompt;
@@ -76,6 +77,8 @@ class AiPostGenerationController extends ResponseController
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
 
+        // $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
+        // dd($images);
         try {
             $result = OpenAI::chat()->create([
                 'model' => $model,
@@ -191,6 +194,7 @@ class AiPostGenerationController extends ResponseController
 
     private function generateAIImage($prompt, $model = 'dall-e-3')
     {
+        Log::info('Call function count');
         $response = OpenAI::images()->create([
             'model' => $model,
             'prompt' => $prompt,
@@ -217,7 +221,8 @@ class AiPostGenerationController extends ResponseController
         //     ";
         // }
 
-        $image = asset(Storage::url('assets/cover-image.png'));
+        // $image = asset(Storage::url('assets/cover-image.png'));
+        $image = "https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/assets/cover-image.png";
 
         // $imagePrompt = "
         //     Create a high-quality, professional image that uses the provided image **{$image}** as the background. 
@@ -343,10 +348,15 @@ class AiPostGenerationController extends ResponseController
             Place the Heading on the generated image : \"The Carbonated Body\"
             Place the chapter name on the generated image : \"{$chapter->chapter}\"
             Place the chapter title on the generated image : \"{$chapter->chapter_title}\"
-            Write 5-6 Bullet points on image extract from provided chapter content : {$chapter->content}. 
+            Write 5-6 Bullet points on image extract from provided chapter content
 
-            Place the book cover on the generated image as a thumbnail on the generated image. cover book is uploade here \"{$image}\".   
+            Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$image}\".   
         ";
+        // dd($imagePrompt,$chapter);
+         // Write 5-6 Bullet points on image extract from provided chapter content : {$chapter->content}.
+            // Include a small book cover thumbnail in the lower corner.
+            // Dark blue scientific book cover with a caduceus-like symbol,
+            // golden title text, cinematic lighting
 
         return $imagePrompt;
     }

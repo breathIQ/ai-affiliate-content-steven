@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,UserController,AffiliateController,
-    FileController};
+    FileController,ContentController};
 use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController,
     AiPostGenerationController,TikTokAuthController,InstagramAuthController};
 
@@ -36,8 +36,9 @@ Route::group(['prefix' => 'v1'], function () {
     Route::get('/auth/tiktok/redirect', [TikTokAuthController::class, 'redirect']);
     Route::get('/auth/tiktok/callback', [TikTokAuthController::class, 'callback']);
 
+    //**********Content Functionality************* */
+    Route::get('/content/{type}', [ContentController::class, 'show']);
     
-
     //******************* */
     Route::post('gemini-image-generate',[AiPostGenerationController::class,'generateSlide']);
 });
