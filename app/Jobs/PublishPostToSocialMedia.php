@@ -225,7 +225,7 @@ class PublishPostToSocialMedia implements ShouldQueue
        
         // If an affiliate URL exists, append it at the bottom
         if ($this->post->affiliate_url) {
-            $captionText .= "\n\n🔗 Shop / Link: " . url('api/v1/user/affiliate-click/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
+            $captionText .= "\n\n🔗 Tap The Link: " . url('api/v1/user/affiliate-click/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
         }
         Log::info("Caption Text: " . $captionText);
         return $captionText;
