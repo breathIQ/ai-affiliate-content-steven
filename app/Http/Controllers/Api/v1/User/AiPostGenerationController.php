@@ -81,11 +81,6 @@ class AiPostGenerationController extends ResponseController
         
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
-        // dd($systemInstruction,$prompt);
-        // $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
-        // $images = $this->generateAIImage('Create a high-quality, professional image');
-        $images = $this->imageGeneration();
-        dd($images,Config::get('constant.open_ai_keys.key'));
         try {
            
             $result = OpenAI::chat()->create([
@@ -182,7 +177,7 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            //$images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -193,7 +188,7 @@ class AiPostGenerationController extends ResponseController
                 'model' => $model,  
                 'post_type' => $postType,
                 'slides' => $slidesCount,
-                'images' => [],//$images,
+                'images' => $images,
                 'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
@@ -205,174 +200,117 @@ class AiPostGenerationController extends ResponseController
         }
     }
 
-    private function generateAIImage($prompt, $model = 'dall-e-3')
+    // private function generateAIImage($prompt, $model = 'dall-e-3')
+    // {
+    //     try {
+    //         Log::info('Call function count');
+    //         $response = OpenAI::images()->create([
+    //             'model' => $model,
+    //             'prompt' => $prompt,
+    //             'size' => '1024x1792', // portrait
+    //             'quality' => 'standard',
+    //         ], [
+    //             'timeout' => 120, // ⬅️ IMPORTANT
+    //         ]);
+
+    //         Log::info('image function response', [$response]);
+    //         return $response->data[0]->url; // Temporary URL from OpenAI
+
+    //     } catch (\Exception $e) {
+    //         return $this->sendError('Error generating image', ['error' => $e->getMessage()], 500);
+    //     }
+
+    // }
+
+    private function generateAIImage($prompt)
     {
-        try {
-            Log::info('Call function count');
-            $response = OpenAI::images()->create([
-                'model' => $model,
-                'prompt' => $prompt,
-                'size' => '1024x1792', // portrait
-                'quality' => 'standard',
-            ], [
-                'timeout' => 120, // ⬅️ IMPORTANT
-            ]);
+        $apiKey = Config::get('constant.open_ai_keys.key');
+        $imagePath = Storage::disk('public')->path('assets/cover-image.png');
+        
+        $ch = curl_init("https://api.openai.com/v1/images/edits");
 
-            Log::info('image function response', [$response]);
-            return $response->data[0]->url; // Temporary URL from OpenAI
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer {$apiKey}"
+        ]);
 
-        } catch (\Exception $e) {
-            return $this->sendError('Error generating image', ['error' => $e->getMessage()], 500);
-        }
+        curl_setopt($ch, CURLOPT_POSTFIELDS, [
+            "model" => "gpt-image-1",
+            "prompt" => $prompt,
+            "image" => new CURLFile($imagePath, "image/png"),
+            "size" => "1024x1024"
+        ]);
 
-        // $attempts = 0;
+        $response = curl_exec($ch);
+        curl_close($ch);
 
-        // while ($attempts < 3) {
-        //     try {
-        //         Log::info('Calling OpenAI image API'.$attempts);
-
-        //         $response = OpenAI::images()->create([
-        //             'model' => $model,
-        //             'prompt' => $prompt,
-        //             'size' => '1024x1792',
-        //             'quality' => 'standard',
-        //         ]);
-
-        //         return $response->data[0]->url;
-
-        //     } catch (\Exception $e) {
-        //         if (str_contains($e->getMessage(), 'rate limit')) {
-        //             $attempts++;
-        //             // sleep(4); // exponential backoff
-        //             // continue;
-        //         }
-
-        //         throw $e;
-        //     }
-        // }
-
-        // throw new \Exception('Image generation failed after retries');
+        // cleanup
+        $result = json_decode($response, true);
+        // dd($result);
+        $base64 = $result['data'][0]['b64_json'];
+        // Create data URL
+        $imageUrl = 'data:image/png;base64,' . $base64;
+        
+        return $imageUrl;
+        
     }
 
     private function buildSlideImagePrompt($chapter, $slideText, $design, $slideNumber)
     {
-        // $designPrompt = '';
+        $imagePath = Storage::disk('public')->path('assets/cover-image.png');
+        $prompt = "Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
 
-        // if (!empty($design)) {
-        //     $designPrompt = "
-        //     Design requirements:
-        //     - Text placement: {$design['text_placement']}
-        //     - Font style: {$design['font_family']} font, weight {$design['font_weight']}
-        //     - Text size hierarchy: {$design['font_size']}
-        //     - Overlay color theme: {$design['overlay_color']}
-        //     ";
-        // }
+            Visual style: clinical
+            Mood: intelligent, calm, modern, educational
+            Audience tone: clinicians
+            Angle: clinical
 
-        // $image = asset(Storage::url('assets/cover-image.png'));
-        $image = "https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/assets/cover-image.png";
+            Subject:
+            An abstract, artistic representation of the {$chapter->chapter_title}.
+            No explicit organs. No medical procedures. No disease depiction.
 
-        $imagePrompt = "
-            Create a high-quality, professional image that uses the provided image **{$image}** as the background. 
-            The background should be simple, abstract, and high-contrast but should **not** overpower the text. 
-            The text must remain clear, legible, and highly visible against the background image.
+            Composition:
+            Clean layout with strong visual hierarchy.
+            At least 40% negative space reserved for text overlay.
+            Center or upper-third visual focus.
+            No clutter.
 
+            Color palette:
+            Muted scientific tones with subtle cinematic lighting.
+            Cool blues and deep shadows with soft glow accents.
+
+            Rendering style:
+            High-quality cinematic scientific illustration with depth and atmosphere.
+            Not photorealistic.
+            Not cartoonish.
+            Not surreal.
+
+            Technical requirements:
+            Portrait orientation, 9:16 aspect ratio.
+            High resolution suitable for 1080x1920 output.
+
+            NO text, NO words, NO letters, NO numbers.
+            NO logos, NO branding, NO watermarks.
+            NO social media UI elements.
+            NO medical equipment, hospitals, syringes, needles.
+            NO diseases, injuries, pain, suffering.
+            NO labeled organs.
+            NO exaggerated anatomy.
+            NO before-and-after visuals.
+            NO dramatic or sensational imagery.
+
+            Place the Heading on the top of the generated image : \"The Carbonated Body\"
+            Place the chapter name on the generated image : {$chapter->chapter}
+            Place the chapter title on the generated image : {$chapter->chapter_title}
+            Write 5-6 Bullet points on image extract from provided chapter content
+
+            Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$imagePath}\".   
         ";
+
         
-        //************2nd prompt******************** */
-        // $imagePrompt = "
-        //     Create a high-quality image and use the {$image} image as background image.
-        //     Simple abstract background.High contrast, professional style (NOT an abstract illustration).
 
-        //     PRIMARY OBJECTIVE (DO NOT IGNORE):
-        //     The image must clearly and legibly display the following text EXACTLY as written, with no changes, no paraphrasing, and no missing words:
-
-        //     TEXT TO DISPLAY (EXACT):
-        //     '{$slideText}'
-
-        //     DESIGN STYLE:
-        //     - Clean, modern, professional image
-           
-        //     - Font family: {$design['font_family']}
-        //     - Font weight: {$design['font_weight']}
-        //     - Text hierarchy: {$design['font_size']}
-        //     - Text placement: {$design['text_placement']}
-        //     - Strong contrast between text and background
-        //     - Overlay color theme: {$design['overlay_color']}
-
-        //     BACKGROUND & IMAGE CONCEPT:
-        //     - Visual concept inspired by: '{$chapter->chapter_title}'
-        //     - Background must be minimal and must NOT overpower the text
-        //     - Background exists only to support readability
-
-        //     STRICT NEGATIVE RULES:
-        //     - No handwritten fonts
-        //     - No decorative or artistic fonts
-        //     - No distorted, warped, blurry, or curved text
-        //     - No extra text, captions, watermarks, logos, or symbols
-        //     - Do NOT rewrite, summarize, or reinterpret the text
-
-        //     FORMAT:
-        //     - Aspect ratio: 4:5
-        //     - High resolution
-
-        // ";
-
-        // $imagePrompt = "
-        //     Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
-
-        //     Visual style: clinical
-        //     Mood: intelligent, calm, modern, educational
-        //     Audience tone: clinicians
-        //     Angle: clinical
-
-        //     Subject:
-        //     An abstract, artistic representation of the \"{$chapter->chapter_title}\".
-        //     No explicit organs. No medical procedures. No disease depiction.
-
-        //     Composition:
-        //     Clean layout with strong visual hierarchy.
-        //     At least 40% negative space reserved for text overlay.
-        //     Center or upper-third visual focus.
-        //     No clutter.
-
-        //     Color palette:
-        //     Muted scientific tones with subtle cinematic lighting.
-        //     Cool blues and deep shadows with soft glow accents.
-
-        //     Rendering style:
-        //     High-quality cinematic scientific illustration with depth and atmosphere.
-        //     Not photorealistic.
-        //     Not cartoonish.
-        //     Not surreal.
-
-        //     Technical requirements:
-        //     Portrait orientation, 9:16 aspect ratio.
-        //     High resolution suitable for 1080x1920 output.
-
-        //     NO text, NO words, NO letters, NO numbers.
-        //     NO logos, NO branding, NO watermarks.
-        //     NO social media UI elements.
-        //     NO medical equipment, hospitals, syringes, needles.
-        //     NO diseases, injuries, pain, suffering.
-        //     NO labeled organs.
-        //     NO exaggerated anatomy.
-        //     NO before-and-after visuals.
-        //     NO dramatic or sensational imagery.
-
-        //     Place the Heading on the generated image : \"The Carbonated Body\"
-        //     Place the chapter name on the generated image : \"{$chapter->chapter}\"
-        //     Place the chapter title on the generated image : \"{$chapter->chapter_title}\"
-        //     Write 5-6 Bullet points on image extract from provided chapter content
-
-        //     Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$image}\".   
-        // ";
-        // dd($imagePrompt,$chapter);
-         // Write 5-6 Bullet points on image extract from provided chapter content : {$chapter->content}.
-            // Include a small book cover thumbnail in the lower corner.
-            // Dark blue scientific book cover with a caduceus-like symbol,
-            // golden title text, cinematic lighting
-
-        return $imagePrompt;
+        return $prompt;
     }
 
     private function getImages($chapter, $postType, $slidesCount, $slideTexts, $design)
@@ -554,13 +492,14 @@ class AiPostGenerationController extends ResponseController
         // ";
 
         $systemInstruction = "You are a professional social media content engine for a science book titled 'The Carbonated Body'. 
-        ";
-        // Based on the chapter content '{$chapter->chapter_title}', generate a high-quality post social media content for Instagram and TikTok posts.
-        // You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
-        // 'caption': A catchy caption with emojis.
-        // 'hashtags': A string of 10-15 trending hashtags as comma separated values.
-        // 'script': A short video script.
-        // 'title': A scroll-stopping headline.
+        Your task is to generate SHORT-FORM social media content for Instagram and TikTok posts, 
+        based on provided user prompt using chapter content:'$chapter->content_title'
+        You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
+        'caption': A catchy caption with emojis.
+        'hashtags': A string of 10-15 trending hashtags as comma separated values.
+        'script': A short video script.
+        'title': A scroll-stopping headline.";
+
         return $systemInstruction;
     }
 
