@@ -242,7 +242,7 @@ class PostController extends ResponseController
                         $path = $uploadedFile->store('posts/media', 'public');
                         \Log::info('file path--'.$path);
                     //    dd($path) ;
-                    }elseif (is_string($mediaItem['file']) && filter_var($mediaItem['file'], FILTER_VALIDATE_URL)) {
+                    }elseif (filter_var($mediaItem['file'], FILTER_VALIDATE_URL)) {
 
                         try {
                             $response = Http::timeout(30)->get($mediaItem['file']);
@@ -284,6 +284,42 @@ class PostController extends ResponseController
                             \Log::error('Failed to download media: ' . $e->getMessage());
                             continue; // skip failed downloads
                         }
+                    }elseif (is_string($mediaItem['file']) && str_starts_with($mediaItem['file'], 'data:')) {
+                        
+                        preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/', $mediaItem['file'], $matches);
+
+                        if (count($matches) !== 3) {
+                            continue;
+                        }
+
+                        $mime = $matches[1];
+                        $base64Data = $matches[2];
+
+                        $mediaType = str_starts_with($mime, 'image/')
+                            ? 'image'
+                            : (str_starts_with($mime, 'video/') ? 'video' : null);
+
+                        if (!$mediaType) {
+                            continue;
+                        }
+
+                        $extension = match ($mime) {
+                            'image/png' => 'png',
+                            'image/jpeg' => 'jpg',
+                            'image/webp' => 'webp',
+                            default => 'bin',
+                        };
+
+                        $binaryData = base64_decode($base64Data);
+
+                        if ($binaryData === false) {
+                            continue;
+                        }
+
+                        $filename = Str::uuid() . '.' . $extension;
+                        $path = "posts/media/$filename";
+
+                        Storage::disk('public')->put($path, $binaryData);
                     }
                     \Log::info('path--'.$path.'---mediaType--'.$mediaType);
                     if ($path && $mediaType) {

@@ -52,7 +52,12 @@ class StorePostRequest extends FormRequest
                         return;
                     }
 
-                    $fail('The file must be an uploaded file or a valid URL.');
+                    // Base64 image
+                    if (is_string($value) && preg_match('/^data:(image|video)\/[a-zA-Z0-9.+-]+;base64,/', $value)) {
+                        return;
+                    }
+
+                    $fail('The file must be an uploaded file, a valid URL, or a base64 media string.');
                 },
             ],
             'media.*.media_order' => 'required|integer',
