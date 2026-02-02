@@ -30,7 +30,11 @@ class TikTokAuthController extends ResponseController
         $query = http_build_query([
             'client_key'    => Config::get('services.tiktok.client_key'),
             'response_type' => 'code',
-            'scope'         => 'user.info.basic', //,video.publish
+            'scope'         => implode(',', [
+                'user.info.basic',
+                'video.upload',
+                'video.publish',
+            ]),  //'user.info.basic', //,video.publish
             'redirect_uri'  => Config::get('services.tiktok.redirect'),
             'state'         => $state,
             'code_challenge' => $challenge,
@@ -175,7 +179,11 @@ class TikTokAuthController extends ResponseController
         $query = http_build_query([
             'client_key' => Config::get('services.tiktok.client_key'),
             'response_type' => 'code',
-            'scope' => 'user.info.basic',
+            'scope'         => implode(',', [
+                'user.info.basic',
+                'video.upload',
+                'video.publish',
+            ]),
             'redirect_uri' => Config::get('services.tiktok.link_redirect'),
             'code_challenge' => $challenge,
             'code_challenge_method' => 'S256',

@@ -103,10 +103,10 @@ class PublishPostToSocialMedia implements ShouldQueue
 
     private function createIgContainer($igId, $token, $media, $isCarouselItem)
     {
-        //$url =  asset(Storage::url($media->media_path));
-        $url =  'https://oaidalleapiprodscus.blob.core.windows.net/private/org-1PEkHWEBzTqfI9C4kUbWgcxU/user-pT8F2pFootq2dQJPc7oUmO1p/img-C17UAWdxbsFqCU5zWQ4FrwML.png?st=2026-01-27T13%3A12%3A59Z&se=2026-01-27T15%3A12%3A59Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=38e27a3b-6174-4d3e-90ac-d7d9ad49543f&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-27T12%3A58%3A39Z&ske=2026-01-28T12%3A58%3A39Z&sks=b&skv=2024-08-04&sig=D7k3jjuEzDpwn6w2RE/jxX5qbRK%2BGbt2E9a1djdrxIA%3D';
+        $url =  asset(Storage::url($media->media_path));
+        //$url =  'https://oaidalleapiprodscus.blob.core.windows.net/private/org-1PEkHWEBzTqfI9C4kUbWgcxU/user-pT8F2pFootq2dQJPc7oUmO1p/img-C17UAWdxbsFqCU5zWQ4FrwML.png?st=2026-01-27T13%3A12%3A59Z&se=2026-01-27T15%3A12%3A59Z&sp=r&sv=2024-08-04&sr=b&rscd=inline&rsct=image/png&skoid=38e27a3b-6174-4d3e-90ac-d7d9ad49543f&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-01-27T12%3A58%3A39Z&ske=2026-01-28T12%3A58%3A39Z&sks=b&skv=2024-08-04&sig=D7k3jjuEzDpwn6w2RE/jxX5qbRK%2BGbt2E9a1djdrxIA%3D';
         //$url =  'https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/posts/media/w0vp3jeS8hdsPUobfACCBoke4sOHEx78gTo9EJmp.mp4';
-        \Log::info("Instagram account published section: createIgContainer");
+        \Log::info("Instagram account published section: createIgContainer".$url);
         $fullCaption = $this->getFormattedCaption('instagram');
         $params = [
             'access_token' => $token,
