@@ -42,7 +42,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         foreach ($platforms as $platformRecord) {
             try {
                 $account = $user->socialAccounts()->where('provider', $platformRecord->platform)->first();
-                Log::info("Social account detailsfor {$platformRecord->platform}: " . $account);
+                Log::info("Social account details for {$platformRecord->platform}", [$account]);
                 if (!$account) {
                     throw new Exception("Social account for {$platformRecord->platform} not linked.");
                 }
@@ -50,6 +50,7 @@ class PublishPostToSocialMedia implements ShouldQueue
                 if ($platformRecord->platform === 'instagram') {
                     $this->publishToInstagram($account);
                 } elseif ($platformRecord->platform === 'tiktok') {
+                    Log::info("Publishing to TikTok for Post {$this->post->id}");
                     $this->publishToTikTok($account);
                 }
 
@@ -171,45 +172,191 @@ class PublishPostToSocialMedia implements ShouldQueue
         return $response->json();
     }
 
+    // private function publishToTikTok($account)
+    // {
+    //     \Log::info("TikTok account published section Account:");
+    //     $video = $this->post->media()->where('media_type', 'video')->first();
+    //     if (!$video) throw new Exception("TikTok requires a video file.");
+
+    //     // $url = asset(Storage::url($video->media_path));
+    //     $url = Storage::disk('public')->path($video->media_path);
+    //     //$url =  'https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/posts/media/w0vp3jeS8hdsPUobfACCBoke4sOHEx78gTo9EJmp.mp4';
+
+    //     \Log::info("TikTok account published section: video url: " . $url);
+    //     // $response = Http::withToken($account->access_token)
+    //     //     ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
+    //     //         "post_info" => [
+    //     //             "caption" => $this->getFormattedCaption('tiktok'),
+    //     //             "privacy_level" => "PUBLIC_TO_EVERYONE"
+    //     //         ],
+    //     //         "source_info" => [
+    //     //             "source" => "PULL_FROM_URL",
+    //     //             "video_url" => $url
+    //     //         ]
+    //     //     ]);
+
+    //     $response = Http::withHeaders([
+    //         'Authorization' => 'Bearer '.$account->access_token,
+    //         'Content-Type'  => 'application/json',
+    //     ])->post('https://open.tiktokapis.com/v2/post/publish/video/init/', [
+    //         "post_info" => [
+    //             "caption" => $this->getFormattedCaption('tiktok'),
+    //             "privacy_level" => "PUBLIC_TO_EVERYONE"
+    //         ],
+    //         "source_info" => [
+    //             "source" => "PULL_FROM_URL",
+    //             "video_url" => $url
+    //         ]
+    //     ]);
+    //     \Log::info("TikTok account published section: response: " . $response->body());
+    //     $publishId = $response['data']['publish_id'] ?? null;
+    //     Log::info("TikTok account published section: publishId: " ,$publishId);
+    //     if ($response->failed()) throw new Exception("TikTok API Error: " . $response->body());
+    //     return $response->json();
+    // }
+
+    //******post published code****** */
+    // private function publishToTikTok($account)
+    // {
+    //     $video = $this->post->media()->where('media_type', 'video')->first();
+    //     if (!$video) {
+    //         throw new Exception("TikTok requires a video file.");
+    //     }
+
+    //     $response = Http::withToken($account->access_token)
+    //         ->get("https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id");
+
+    //     Log::info("TikTok account published section: response: " . $response->body());
+
+    //     $videoPath = Storage::disk('public')->path($video->media_path);
+    //     Log::info("TikTok account published section: video path: " . $videoPath);
+    //     // STEP 1: INIT Upload
+    //     $initResponse = Http::withToken($account->access_token)
+    //         ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
+    //             "post_info" => [
+    //                 "title" => "My Upload Video"
+    //             ],
+    //             "source_info" => [
+    //                 "source" => "FILE_UPLOAD",
+    //                 "video_size" => filesize($videoPath),
+    //                 "chunk_size" => filesize($videoPath),
+    //                 "total_chunk_count" => 1,
+    //             ]
+    //         ]);
+
+    //     $initData = $initResponse->json();
+    //     Log::info("TikTok account published section: init data", ['data' => $initData]);
+    //     if (empty($initData['data']['upload_url'])) {
+    //         throw new Exception("Init failed: " . $initResponse->body());
+    //     }
+
+    //     $uploadUrl = $initData['data']['upload_url'];
+    //     $uploadId  = $initData['data']['upload_id'];
+
+    //     // STEP 2: Upload binary video (PUT request)
+    //     $uploadResponse = Http::withHeaders([
+    //         "Content-Type" => "video/mp4",
+    //     ])->put($uploadUrl, file_get_contents($videoPath));
+
+    //     if ($uploadResponse->failed()) {
+    //         throw new Exception("Upload failed: " , $uploadResponse->body());
+    //     }
+
+    //     // STEP 3: Publish
+    //     $publishResponse = Http::withToken($account->access_token)
+    //         ->post("https://open.tiktokapis.com/v2/post/publish/video/", [
+    //             "post_info" => [
+    //                 "title" => $this->getFormattedCaption('tiktok'),
+    //                 "privacy_level" => "SELF_ONLY" // PUBLIC_TO_EVERYONE or PRIVATE_TO_FOLLOWERS
+    //             ],
+    //             "source_info" => [
+    //                 "source" => "FILE_UPLOAD",
+    //                 "upload_id" => $uploadId
+    //             ]
+    //         ]);
+
+    //     $publishData = $publishResponse->json();
+    //     Log::info("TikTok account published section: publish data", ['data' => $publishData]);
+    //     if ($publishResponse->failed()) {
+    //         throw new Exception("Publish failed: " , $publishResponse->body());
+    //     }
+
+    //     return $publishData;
+    // }
+
+    //********draft code*** */
     private function publishToTikTok($account)
     {
-        \Log::info("TikTok account published section");
         $video = $this->post->media()->where('media_type', 'video')->first();
-        if (!$video) throw new Exception("TikTok requires a video file.");
+        if (!$video) {
+            throw new Exception("TikTok requires a video file.");
+        }
 
-        // $url = asset(Storage::url($video->media_path));
-        $url =  'https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/posts/media/w0vp3jeS8hdsPUobfACCBoke4sOHEx78gTo9EJmp.mp4';
+        // STEP 0: Get user info (optional)
+        $response = Http::withToken($account->access_token)
+            ->get("https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id");
 
-        \Log::info("TikTok account published section: video url: " . $url);
-        // $response = Http::withToken($account->access_token)
-        //     ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
-        //         "post_info" => [
-        //             "caption" => $this->getFormattedCaption('tiktok'),
-        //             "privacy_level" => "PUBLIC_TO_EVERYONE"
-        //         ],
-        //         "source_info" => [
-        //             "source" => "PULL_FROM_URL",
-        //             "video_url" => $url
-        //         ]
-        //     ]);
+        Log::info("TikTok account published section: user info", ['response' => $response->json()]);
 
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer '.$account->access_token,
-            'Content-Type'  => 'application/json',
-        ])->post('https://open.tiktokapis.com/v2/post/publish/video/init/', [
-            "post_info" => [
-                "caption" => $this->getFormattedCaption('tiktok'),
-                "privacy_level" => "PUBLIC_TO_EVERYONE"
-            ],
-            "source_info" => [
-                "source" => "PULL_FROM_URL",
-                "video_url" => $url
-            ]
-        ]);
-        \Log::info("TikTok account published section: response: " . $response->body());
-        if ($response->failed()) throw new Exception("TikTok API Error: " . $response->body());
-        return $response->json();
+        $videoPath = Storage::disk('public')->path($video->media_path);
+        Log::info("TikTok account published section: video path", ['path' => $videoPath]);
+
+        // STEP 1: INIT Upload
+        $initResponse = Http::withToken($account->access_token)
+            ->post("https://open.tiktokapis.com/v2/post/publish/video/init/", [
+                "post_info" => [
+                    "title" => $this->getFormattedCaption('tiktok')
+                ],
+                "source_info" => [
+                    "source" => "FILE_UPLOAD",
+                    "video_size" => filesize($videoPath),
+                    "chunk_size" => filesize($videoPath),
+                    "total_chunk_count" => 1,
+                ]
+            ]);
+
+        $initData = $initResponse->json();
+        Log::info("TikTok account published section: init data", ['data' => $initData]);
+
+        if (empty($initData['data']['upload_url'])) {
+            throw new Exception("Init failed: " . $initResponse->body());
+        }
+
+        $uploadUrl = $initData['data']['upload_url'];
+        $uploadId  = $initData['data']['upload_id'];
+
+        // STEP 2: Upload binary video (PUT request)
+        $uploadResponse = Http::withHeaders([
+            "Content-Type" => "video/mp4",
+        ])->put($uploadUrl, file_get_contents($videoPath));
+
+        if ($uploadResponse->failed()) {
+            throw new Exception("Upload failed: " . $uploadResponse->body());
+        }
+
+        // STEP 3: Publish as DRAFT
+        $publishResponse = Http::withToken($account->access_token)
+            ->post("https://open.tiktokapis.com/v2/post/publish/video/", [
+                "post_info" => [
+                    "title" => $this->getFormattedCaption('tiktok'),
+                    "privacy_level" => "PRIVATE_TO_ME" // This ensures the video goes to Drafts
+                ],
+                "source_info" => [
+                    "source" => "FILE_UPLOAD",
+                    "upload_id" => $uploadId
+                ]
+            ]);
+
+        $publishData = $publishResponse->json();
+        Log::info("TikTok account published section: publish data", ['data' => $publishData]);
+
+        if ($publishResponse->failed() || !empty($publishData['error'])) {
+            throw new Exception("Publish failed: " . $publishResponse->body());
+        }
+
+        return $publishData;
     }
+
 
     private function getFormattedCaption($platform)
     {
