@@ -364,7 +364,28 @@ class UserAuthController extends ResponseController
     {
         try {
             $user = Auth::user()->load('socialAccounts');
-            return $this->sendResponse($user->socialAccounts, 'User social accounts fetched successfully', 200);
+            $platforms = [
+                'instagram',
+                'tiktok',
+            ];
+    
+            $response = collect($platforms)->mapWithKeys(function ($platform) use ($user) {
+                $account = $user->socialAccounts
+                    ->firstWhere('provider', $platform);
+    
+                return [
+                    $platform => [
+                        'connected' => (bool) $account,
+                        'username'  => $account?->username,
+                    ]
+                ];
+            });
+    
+            return $this->sendResponse(
+                $response,
+                'User social accounts fetched successfully',
+                200
+            );
         } catch (\Exception $e) {
             return $this->sendError('Something went wrong', [], 500);
         }

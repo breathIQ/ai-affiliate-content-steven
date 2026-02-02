@@ -182,7 +182,7 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
+            //$images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -193,7 +193,7 @@ class AiPostGenerationController extends ResponseController
                 'model' => $model,  
                 'post_type' => $postType,
                 'slides' => $slidesCount,
-                'images' => $images,
+                'images' => [],//$images,
                 'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
