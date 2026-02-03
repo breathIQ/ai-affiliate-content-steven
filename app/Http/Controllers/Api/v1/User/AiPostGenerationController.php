@@ -239,7 +239,7 @@ class AiPostGenerationController extends ResponseController
             "model" => "gpt-image-1",
             "prompt" => $prompt,
             "image" => new CURLFile($imagePath, "image/png"),
-            "size" => "1024x1024"
+            "size" => "1024x1536"
         ]);
 
         $response = curl_exec($ch);
@@ -259,54 +259,84 @@ class AiPostGenerationController extends ResponseController
     private function buildSlideImagePrompt($chapter, $slideText, $design, $slideNumber)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
-        $prompt = "Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
+        // $prompt = "Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
 
-            Visual style: clinical
-            Mood: intelligent, calm, modern, educational
-            Audience tone: clinicians
-            Angle: clinical
+        //     Visual style: clinical
+        //     Mood: intelligent, calm, modern, educational
+        //     Audience tone: clinicians
+        //     Angle: clinical
 
-            Subject:
-            An abstract, artistic representation of the {$chapter->chapter_title}.
-            No explicit organs. No medical procedures. No disease depiction.
+        //     Subject:
+        //     An abstract, artistic representation of the {$chapter->chapter_title}.
+        //     No explicit organs. No medical procedures. No disease depiction.
 
-            Composition:
-            Clean layout with strong visual hierarchy.
-            At least 40% negative space reserved for text overlay.
-            Center or upper-third visual focus.
-            No clutter.
+        //     Composition:
+        //     Clean layout with strong visual hierarchy.
+        //     At least 40% negative space reserved for text overlay.
+        //     Center or upper-third visual focus.
+        //     No clutter.
 
-            Color palette:
-            Muted scientific tones with subtle cinematic lighting.
-            Cool blues and deep shadows with soft glow accents.
+        //     Color palette:
+        //     Muted scientific tones with subtle cinematic lighting.
+        //     Cool blues and deep shadows with soft glow accents.
 
-            Rendering style:
-            High-quality cinematic scientific illustration with depth and atmosphere.
-            Not photorealistic.
-            Not cartoonish.
-            Not surreal.
+        //     Rendering style:
+        //     High-quality cinematic scientific illustration with depth and atmosphere.
+        //     Not photorealistic.
+        //     Not cartoonish.
+        //     Not surreal.
 
-            Technical requirements:
-            Portrait orientation, 9:16 aspect ratio.
-            High resolution suitable for 1080x1920 output.
+        //     Technical requirements:
+        //     Portrait orientation, 9:16 aspect ratio.
+        //     High resolution suitable for 1080x1920 output.
 
-            NO text, NO words, NO letters, NO numbers.
-            NO logos, NO branding, NO watermarks.
-            NO social media UI elements.
-            NO medical equipment, hospitals, syringes, needles.
-            NO diseases, injuries, pain, suffering.
-            NO labeled organs.
-            NO exaggerated anatomy.
-            NO before-and-after visuals.
-            NO dramatic or sensational imagery.
+        //     NO text, NO words, NO letters, NO numbers.
+        //     NO logos, NO branding, NO watermarks.
+        //     NO social media UI elements.
+        //     NO medical equipment, hospitals, syringes, needles.
+        //     NO diseases, injuries, pain, suffering.
+        //     NO labeled organs.
+        //     NO exaggerated anatomy.
+        //     NO before-and-after visuals.
+        //     NO dramatic or sensational imagery.
 
-            Place the Heading on the top of the generated image : \"The Carbonated Body\"
-            Place the chapter name on the generated image : {$chapter->chapter}
-            Place the chapter title on the generated image : {$chapter->chapter_title}
-            Write 5-6 Bullet points on image extract from provided chapter content
+        //     Place the Heading on the top of the generated image : \"The Carbonated Body\"
+        //     Place the chapter name on the generated image : {$chapter->chapter}
+        //     Place the chapter title on the generated image : {$chapter->chapter_title}
+        //     Write 5-6 Bullet points on image extract from provided chapter content
 
-            Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$imagePath}\".   
-        ";
+        //     Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$imagePath}\".   
+        // ";
+        
+        $prompt = "A professional 9:16 vertical infographic layout for a medical educational post. 
+            TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
+            SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
+
+            VISUAL CENTERPIECE: 
+            An abstract, artistic clinical scientific illustration of {$chapter->chapter_title}. 
+            Style: Clinical, modern, muted blues, soft cinematic lighting, non-photorealistic. 
+            NO organs, NO medical equipment.
+            
+
+            CONTENT SECTION:
+            On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts:  {$chapter->chapter_title}.
+
+            THUMBNAIL ELEMENT:
+            In the bottom corner, include a small, professional placeholder for a book cover {$imagePath}.
+
+            TECHNICAL SPECIFICATIONS:
+            - Aspect Ratio: 9:16 (Vertical).
+            - Composition: High-end medical journal aesthetic.
+            - Layout: Top-heavy text, center visual, bottom-right thumbnail.
+            - Ensure all text is legible and centered within the 1080x1920 frame with safe-zone margins to prevent cropping.
+            
+            IMPORTANT LAYOUT RULES:
+            - Use a 2:3 vertical layout (1024x1536).
+            - Keep all text within safe margins (at least 12% padding top and bottom).
+            - Title must be fully visible at the top.
+            - Book cover thumbnail must be fully visible at the bottom-right.
+            - No cropping or edge-clipped text
+            ";
 
         
 
