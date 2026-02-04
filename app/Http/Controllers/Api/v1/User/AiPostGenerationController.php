@@ -31,19 +31,15 @@ class AiPostGenerationController extends ResponseController
              // new fields
             'post_type' => 'required|in:carousel,single',
 
-            'slides' => 'required_with:slide_texts|integer|min:1|max:4',
-
-            'slide_texts' => 'nullable|array',
-            'slide_texts.*' => 'required|string',
+            'slides' => 'required|numeric|min:1|max:4',
 
             // design only if slide_texts exists
-            'design' => 'required_with:slide_texts|array',
+            'design' => 'required|array',
 
-            'design.overlay_color' => 'required_with:slide_texts|string',
-            'design.text_placement' => 'required_with:slide_texts|string',
-            'design.font_family' => 'required_with:slide_texts|string',
-            'design.font_size' => 'required_with:slide_texts|string',
-            'design.font_weight' => 'required_with:slide_texts|string',
+            'design.image_style' => 'required|string',
+            'design.content_angle' => 'required|string',
+            'design.human_presence' => 'required|string',
+            'design.visual_mood' => 'required|string',
         ]);
 
         if ($validator->fails()) {
@@ -60,7 +56,6 @@ class AiPostGenerationController extends ResponseController
 
         $postType    = $request->post_type;
         $slidesCount = (int) $request->slides;
-        $slideTexts  = $request->slide_texts ?? [];
         $design      = $request->design ?? null;
 
         // Final prompt jo AI ko jayega
@@ -68,19 +63,20 @@ class AiPostGenerationController extends ResponseController
         $finalPrompt = "Task: {$userPrompt}";
 
         if (str_contains($modelChoice, 'gpt')) {
-            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$slideTexts,$design);
+            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
         } elseif (str_contains($modelChoice, 'claude')) {
-            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$slideTexts,$design);
+            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
         }
 
         return $this->sendError('Invalid Model Selected', [], 400);
     }
 
-    private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$slideTexts,$design)
+    private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design)
     {
-        
+        // dd($design);
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
+        
         try {
            
             $result = OpenAI::chat()->create([
@@ -105,7 +101,7 @@ class AiPostGenerationController extends ResponseController
             // dd($structuredData);
             /** ------------------ IMAGE GENERATION ------------------ */
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design);
 
             /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
@@ -134,7 +130,7 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $slideTexts, $design)
+    private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $design)
     {
         // System Instruction for structured output like your UI
         $systemInstruction = $this->getSystemInstruction($chapter);
@@ -177,7 +173,7 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $slideTexts, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -256,7 +252,7 @@ class AiPostGenerationController extends ResponseController
         
     }
 
-    private function buildSlideImagePrompt($chapter, $slideText, $design, $slideNumber)
+    private function buildSlideImagePrompt($chapter, $design, $slideNumber)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         // $prompt = "Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
@@ -307,19 +303,20 @@ class AiPostGenerationController extends ResponseController
 
         //     Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$imagePath}\".   
         // ";
-        
+    //    dd($design);
         $prompt = "A professional 9:16 vertical infographic layout for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
             SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
 
             VISUAL CENTERPIECE: 
-            An abstract, artistic clinical scientific illustration of {$chapter->chapter_title}. 
-            Style: Clinical, modern, muted blues, soft cinematic lighting, non-photorealistic. 
-            NO organs, NO medical equipment.
-            
+            Visual style: {$design['image_style']}
+            Mood: {$design['visual_mood']}
+            Audience tone: {$design['human_presence']}
+            Angle: {$design['content_angle']}
+          
 
             CONTENT SECTION:
-            On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts:  {$chapter->chapter_title}.
+            On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: {$chapter->chapter_title}.
 
             THUMBNAIL ELEMENT:
             In the bottom corner, include a small, professional placeholder for a book cover {$imagePath}.
@@ -339,30 +336,47 @@ class AiPostGenerationController extends ResponseController
             ";
 
         
+            // An abstract, artistic clinical scientific illustration of {$chapter->chapter_title}. 
+            // Style: Clinical, modern, muted blues, soft cinematic lighting, non-photorealistic. 
+            // NO organs, NO medical equipment.
+
+            // 1st
+            // Visual style: clinical
+            // Mood: Curious & Thoughtful
+            // Audience tone: Everyday People
+            // Angle: Clinical Perspective
+        // 2nd
+        // Visual style: Lifestyle / Wellness
+        //     Mood: Empowering
+        //     Audience tone: Single Person
+        //     Angle: Beginner Friendly
+
+        //3rd
+        // Visual style: Hyper-Realistic
+        //     Mood: Warm & Reassuring
+        //     Audience tone: Clinical / Professional
+        //     Angle: Story-Driven
 
         return $prompt;
     }
 
-    private function getImages($chapter, $postType, $slidesCount, $slideTexts, $design)
+    private function getImages($chapter, $postType, $slidesCount, $design)
     {
+        // dd($design);
         $images = [];
-
+        
         if ($postType === 'carousel') {
             
             for ($i = 0; $i < $slidesCount; $i++) {
 
-                $slideText = $slideTexts[$i] ?? null;
-
                 $imagePrompt = $this->buildSlideImagePrompt(
                     $chapter,
-                    $slideText,
                     $design,
                     $i + 1
                 );
 
                 $images[] = [
                     'slide' => $i + 1,
-                    'text'  => $slideText,
                     'image_url' => $this->generateAIImage($imagePrompt),
                 ];
 
@@ -371,36 +385,14 @@ class AiPostGenerationController extends ResponseController
 
         } else {
             // Single post
-            $slideText = $slideTexts[0] ?? null;
-
-            if ($slideText) {
-                // Single with text
-                $imagePrompt = $this->buildSlideImagePrompt(
-                    $chapter,
-                    $slideText,
-                    $design,
-                    1
-                );
-            } else {
-                // Single without text
-                $imagePrompt = "
-                Create a high-quality social media post image.
-
-                Image concept:
-                '{$chapter->chapter_title}'
-
-                Design style:
-                - Modern
-                - Clean
-                - Professional
-                - Social media optimized
-                - No text overlay
-                ";
-            }
-
+            $imagePrompt = $this->buildSlideImagePrompt(
+                $chapter,
+                $design,
+                1
+            );
+           
             $images[] = [
                 'slide' => 1,
-                'text'  => $slideText,
                 'image_url' => $this->generateAIImage($imagePrompt),
             ];
         }
