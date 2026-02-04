@@ -73,7 +73,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         // $this->post->update(['status' => 'published','published_at' => now()]);
         if ($hasFailure) {
             $this->post->update([
-                'status' => 'failed',
+                'status' => 'draft',
             ]);
         } else {
             $this->post->update([

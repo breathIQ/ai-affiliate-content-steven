@@ -67,7 +67,7 @@ class PostController extends ResponseController
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
-                    'status' => $post->status,
+                    'status' => $post->status !='published' ? 'Failed' : 'Published',
                     'created_at' => $post->created_at->format('M d, Y')
                 ];
             });
