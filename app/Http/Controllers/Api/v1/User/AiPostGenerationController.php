@@ -316,7 +316,7 @@ class AiPostGenerationController extends ResponseController
           
 
             CONTENT SECTION:
-            On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: {$chapter->chapter_title}.
+            On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: {$chapter->chapter_title}, content angle: {$design['content_angle']}.
 
             THUMBNAIL ELEMENT:
             In the bottom corner, include a small, professional placeholder for a book cover {$imagePath}.
