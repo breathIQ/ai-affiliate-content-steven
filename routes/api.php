@@ -89,7 +89,7 @@ Route::group(['prefix' => 'v1/user'], function () {
     Route::post('/social-login', [UserAuthController::class, 'socialLogin']);
     Route::post('/social-login/{provider}', [UserAuthController::class, 'socialLoginHandler']);
     Route::get('/get-chapter', [UserDashboardController::class, 'getChapter']);
-    Route::get('/affiliate-click/{post_id}/{affiliate_id}', [AffiliateClickController::class, 'track']);
+    // Route::get('/affiliate-click/{post_id}/{affiliate_id}', [AffiliateClickController::class, 'track']);
 
     Route::post('/save-remote-file', [AffiliateClickController::class, 'saveRemoteFile']);
     

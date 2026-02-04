@@ -38,9 +38,11 @@ class PublishPostToSocialMedia implements ShouldQueue
         
         $platforms = $this->post->platforms()->where('status', 'pending')->get();   // need to change this to pending
         $user = $this->post->user;
-
+        $hasFailure = false;
+        
         foreach ($platforms as $platformRecord) {
             try {
+               
                 $account = $user->socialAccounts()->where('provider', $platformRecord->platform)->first();
                 Log::info("Social account details for {$platformRecord->platform}", [$account]);
                 if (!$account) {
@@ -57,6 +59,8 @@ class PublishPostToSocialMedia implements ShouldQueue
                 $platformRecord->update(['status' => 'published','published_at' => now()]);
 
             } catch (Exception $e) {
+                $hasFailure = true;
+
                 $platformRecord->update([
                     'status' => 'failed',  //need to change this to failed
                 ]);
@@ -66,7 +70,17 @@ class PublishPostToSocialMedia implements ShouldQueue
         }
 
         // Update main post status if all platforms are done
-        $this->post->update(['status' => 'published','published_at' => now()]);
+        // $this->post->update(['status' => 'published','published_at' => now()]);
+        if ($hasFailure) {
+            $this->post->update([
+                'status' => 'failed',
+            ]);
+        } else {
+            $this->post->update([
+                'status' => 'published',
+                'published_at' => now()
+            ]);
+        }
             
         
     }
@@ -121,7 +135,6 @@ class PublishPostToSocialMedia implements ShouldQueue
             $params['image_url'] = $url;
         }
 
-        // $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", $params);
         $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", $params);
         \Log::info("Instagram account published section: createIgContainer response: " . $response->body());
         if ($response->failed()) throw new Exception("IG Container Error: " . $response->body());
@@ -132,13 +145,7 @@ class PublishPostToSocialMedia implements ShouldQueue
     private function createIgCarouselMaster($igId, $token, $itemIds)
     {
         \Log::info("Instagram account published section: createIgCarouselMaster");
-        // $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media", [
-        //     'media_type' => 'CAROUSEL',
-        //     'children' => implode(',', $itemIds),
-        //     'caption' => $this->getFormattedCaption('instagram'),
-        //     'access_token' => $token,
-        // ]);
-
+    
         $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", [
             'media_type' => 'CAROUSEL',
             'children' => implode(',', $itemIds),
@@ -153,10 +160,6 @@ class PublishPostToSocialMedia implements ShouldQueue
     private function finalizeIgPublish($igId, $token, $containerId)
     {
         \Log::info("Instagram account published section: finalizeIgPublish");
-        // $response = Http::post("https://graph.facebook.com/v19.0/{$igId}/media_publish", [
-        //     'creation_id' => $containerId,
-        //     'access_token' => $token,
-        // ]);
         
         $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media_publish", [
             'creation_id' => $containerId,
@@ -363,11 +366,11 @@ class PublishPostToSocialMedia implements ShouldQueue
         ]);
 
        $captionText = implode("\n\n", $parts);
-       Log::info('affiliate link: ' . url('api/v1/user/affiliate-click/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform));
+       Log::info('affiliate link: ' . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform));
        
         // If an affiliate URL exists, append it at the bottom
         if ($this->post->affiliate_url) {
-            $captionText .= "\n\n🔗 Tap The Link: " . url('api/v1/user/affiliate-click/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
+            $captionText .= "\n\n🔗 Copy The Link: " . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
         }
         Log::info("Caption Text: " . $captionText);
         return $captionText;
@@ -393,11 +396,6 @@ class PublishPostToSocialMedia implements ShouldQueue
 
         do {
             sleep(3);
-
-            // $response = Http::get("https://graph.facebook.com/v19.0/{$containerId}", [
-            //     'fields' => 'status_code',
-            //     'access_token' => $token,
-            // ]);
 
             $response = Http::get("https://graph.instagram.com/v19.0/{$containerId}", [
                 'fields' => 'status_code',

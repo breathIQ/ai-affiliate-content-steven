@@ -16,11 +16,12 @@ class AffiliateClickController extends ResponseController
 {
     public function track(Request $request, $post_id, $affiliate_id)
     {
+        
         $post = Post::where('id', $post_id)->firstOrFail();
         
         // 1. Detect Platform from URL parameter OR Referrer header
         $platform = $request->query('ref') ?? $this->parseReferrer($request->header('referer'));
-
+        // dd($post_id, $affiliate_id,$platform,$request->userAgent());
         // 2. Determine Device Type from User Agent
         $device = $this->getDevice($request->userAgent());
         // Check for duplicate click from same IP for this post within 24 hours (or today)

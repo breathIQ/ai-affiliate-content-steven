@@ -255,55 +255,7 @@ class AiPostGenerationController extends ResponseController
     private function buildSlideImagePrompt($chapter, $design, $slideNumber)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
-        // $prompt = "Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
-
-        //     Visual style: clinical
-        //     Mood: intelligent, calm, modern, educational
-        //     Audience tone: clinicians
-        //     Angle: clinical
-
-        //     Subject:
-        //     An abstract, artistic representation of the {$chapter->chapter_title}.
-        //     No explicit organs. No medical procedures. No disease depiction.
-
-        //     Composition:
-        //     Clean layout with strong visual hierarchy.
-        //     At least 40% negative space reserved for text overlay.
-        //     Center or upper-third visual focus.
-        //     No clutter.
-
-        //     Color palette:
-        //     Muted scientific tones with subtle cinematic lighting.
-        //     Cool blues and deep shadows with soft glow accents.
-
-        //     Rendering style:
-        //     High-quality cinematic scientific illustration with depth and atmosphere.
-        //     Not photorealistic.
-        //     Not cartoonish.
-        //     Not surreal.
-
-        //     Technical requirements:
-        //     Portrait orientation, 9:16 aspect ratio.
-        //     High resolution suitable for 1080x1920 output.
-
-        //     NO text, NO words, NO letters, NO numbers.
-        //     NO logos, NO branding, NO watermarks.
-        //     NO social media UI elements.
-        //     NO medical equipment, hospitals, syringes, needles.
-        //     NO diseases, injuries, pain, suffering.
-        //     NO labeled organs.
-        //     NO exaggerated anatomy.
-        //     NO before-and-after visuals.
-        //     NO dramatic or sensational imagery.
-
-        //     Place the Heading on the top of the generated image : \"The Carbonated Body\"
-        //     Place the chapter name on the generated image : {$chapter->chapter}
-        //     Place the chapter title on the generated image : {$chapter->chapter_title}
-        //     Write 5-6 Bullet points on image extract from provided chapter content
-
-        //     Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$imagePath}\".   
-        // ";
-    //    dd($design);
+        
         $prompt = "A professional 9:16 vertical infographic layout for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
             SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
@@ -334,28 +286,6 @@ class AiPostGenerationController extends ResponseController
             - Book cover thumbnail must be fully visible at the bottom-right.
             - No cropping or edge-clipped text
             ";
-
-        
-            // An abstract, artistic clinical scientific illustration of {$chapter->chapter_title}. 
-            // Style: Clinical, modern, muted blues, soft cinematic lighting, non-photorealistic. 
-            // NO organs, NO medical equipment.
-
-            // 1st
-            // Visual style: clinical
-            // Mood: Curious & Thoughtful
-            // Audience tone: Everyday People
-            // Angle: Clinical Perspective
-        // 2nd
-        // Visual style: Lifestyle / Wellness
-        //     Mood: Empowering
-        //     Audience tone: Single Person
-        //     Angle: Beginner Friendly
-
-        //3rd
-        // Visual style: Hyper-Realistic
-        //     Mood: Warm & Reassuring
-        //     Audience tone: Clinical / Professional
-        //     Angle: Story-Driven
 
         return $prompt;
     }
@@ -519,7 +449,7 @@ class AiPostGenerationController extends ResponseController
         You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values.
-        'script': A short video script.
+        'script': A short script.
         'title': A scroll-stopping headline.";
 
         return $systemInstruction;
