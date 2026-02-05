@@ -73,7 +73,8 @@ class AiPostGenerationController extends ResponseController
 
     private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design)
     {
-        // dd($design);
+        // $images = $this->getImages($chapter, $postType, $slidesCount, $design);
+        // dd($images);
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
         
@@ -173,7 +174,7 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design);
+            //$images = $this->getImages($chapter, $postType, $slidesCount, $design);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -184,7 +185,7 @@ class AiPostGenerationController extends ResponseController
                 'model' => $model,  
                 'post_type' => $postType,
                 'slides' => $slidesCount,
-                'images' => $images,
+                //'images' => $images,
                 'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
@@ -271,7 +272,10 @@ class AiPostGenerationController extends ResponseController
             On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: {$chapter->chapter_title}, content angle: {$design['content_angle']}.
 
             THUMBNAIL ELEMENT:
-            In the bottom corner, include a small, professional placeholder for a book cover {$imagePath}.
+            In the bottom corner, place the EXACT provided book cover image from {$imagePath} as a static thumbnail.
+            Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
+            Preserve the original text, colors, typography, proportions, and layout exactly as provided.
+            The cover must be used as-is, unchanged, and scaled down only.
 
             TECHNICAL SPECIFICATIONS:
             - Aspect Ratio: 9:16 (Vertical).
@@ -343,12 +347,38 @@ class AiPostGenerationController extends ResponseController
         $concept = $request->input('image_concept');
  
         // 1. Construct the reasoning-based prompt
-        $prompt = "Create an Instagram graphic. Concept: {$concept}. "
-                . "Overlay the text '{$slideText}' exactly. "
-                . "Design requirements: Color {$design['overlay_color']}, "
-                . "Placement {$design['text_placement']}, "
-                . "Font {$design['font_family']}, Weight {$design['font_weight']}, Size {$design['font_size']}. "
-                . "Render the text with high-fidelity professional typography.";
+        $prompt = "A professional 9:16 vertical infographic layout for a medical educational post. 
+                TITLE: 'The Carbonated Body' (Large, elegant serif font at the top). 
+                SUBTITLE: 'Chapter 20: Carbon Dioxide and the Sugar Trap CO₂ as a Key to Unlocking Diabetes' (Positioned below the title).
+
+                VISUAL CENTERPIECE: Visual style: Hyper-Realistic
+                Mood: Curious & Thoughtful
+                Audience tone: Clinical / Professional
+                Angle: Clinical Perspective
+
+                CONTENT SECTION:
+                On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: Carbon Dioxide and the Sugar Trap CO₂ as a Key to Unlocking Diabetes, content angle: Clinical Perspective.
+
+                THUMBNAIL ELEMENT:
+                In the left bottom corner, place the EXACT provided book cover image from provided as a static thumbnail.
+                Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
+                Preserve the original text, colors, typography, proportions, and layout exactly as provided.
+                The cover must be used as-is, unchanged, and scaled down only.
+
+                TECHNICAL SPECIFICATIONS:
+                - Aspect Ratio: 9:16 (Vertical).
+                - Composition: High-end medical journal aesthetic.
+                - Layout: Top-heavy text, center visual, bottom-right thumbnail.
+                - Ensure all text is legible and centered within the 1080x1920 frame with safe-zone margins to prevent cropping.
+
+                IMPORTANT LAYOUT RULES:
+                - Use a 2:3 vertical layout (1024x1536).
+                - Keep all text within safe margins (at least 12% padding top and bottom).
+                - Title must be fully visible at the top.
+                - Book cover thumbnail must be fully visible at the bottom-right.
+                - No cropping or edge-clipped text
+                - Uniform 25% white negative space border on all four sides, creating a clean gallery-style matting. Ensure no text or 
+                  design elements bleed into this white margin.";
 
         try{
             // 2. Execute the Request
@@ -456,93 +486,109 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    public function imageGeneration()
+    public function removeGeminiWatermark(Request $request)
     {
-        //$apiKey = $chatGptKey;
-        $apiKey = Config::get('constant.open_ai_keys.key');
-        // $imageUrl = "https://aiaffiliate.betacvinfotech.com/ai-affiliate-content-steven/public/storage/assets/cover-image.png";
-        // $imageData = file_get_contents($imageUrl);
+         // Ensure storage directory exists
+        Storage::disk('public')->makeDirectory('temp');
+        Storage::disk('public')->makeDirectory('uploads/gemini-crop');
 
-        // $tempFile = tempnam(sys_get_temp_dir(), 'img');
-        // file_put_contents($tempFile, $imageData);
+        /**
+         * STEP 1: Get image from file or URL
+         */
+        if ($request->hasFile('image')) {
+
+            // Case 1: Uploaded file
+            $file = $request->file('image');
+            $imagePath = $file->store('temp', 'public');
+            $imagePath = Storage::disk('public')->path($imagePath);
+
+        } elseif ($request->filled('image')) {
+
+            // Case 2: Image URL
+            $imageUrl = $request->input('image');
+
+            // Validate URL
+            if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                return response()->json(['error' => 'Invalid image URL'], 422);
+            }
+
+            $imageContent = @file_get_contents($imageUrl);
+            if ($imageContent === false) {
+                return response()->json(['error' => 'Unable to download image'], 422);
+            }
+
+            $extension = pathinfo(parse_url($imageUrl, PHP_URL_PATH), PATHINFO_EXTENSION) ?: 'png';
+            $fileName = 'temp/' . uniqid('img_') . '.' . $extension;
+
+            Storage::disk('public')->put($fileName, $imageContent);
+            $imagePath = Storage::disk('public')->path($fileName);
+
+        } else {
+            return response()->json(['error' => 'No image file or URL provided'], 422);
+        }
+     
+        //function of crop image
+        $outputPath = Storage::disk('public')->path('uploads/gemini-crop/gemini-crop'.time().'.png');
+
+        // $imagePath = Storage::disk('public')->path('assets/gemini(1).png');
+        $cropPercent = 0.06;
+
+        $imageInfo = getimagesize($imagePath);
+        if (!$imageInfo) return false;
+
+        $width  = $imageInfo[0];
+        $height = $imageInfo[1];
+        $mime   = $imageInfo['mime'];
+
+        // 2. Load image based on type
+        switch ($mime) {
+            case 'image/jpeg': $src = imagecreatefromjpeg($imagePath); break;
+            case 'image/png':  $src = imagecreatefrompng($imagePath);  break;
+            case 'image/webp': $src = imagecreatefromwebp($imagePath); break;
+            default: return false;
+        }
+
+        // 3. Calculate Crop Area (Trimming the edges)
+        $xOffset = $width * $cropPercent;
+        $yOffset = $height * $cropPercent;
+        $newW    = $width - (2 * $xOffset);
+        $newH    = $height - (2 * $yOffset);
+
+        // 4. Create new canvas and crop
+        $dest = imagecreatetruecolor($newW, $newH);
         
-        $imagePath = Storage::disk('public')->path('assets/cover-image.png');
-        // dd($imagePath);
-        $prompt = "Portrait 9:16 background image for an Instagram and TikTok educational post related to a science book titled \"The Carbonated Body\".
+        // Preserve transparency if it's a PNG
+        if ($mime == 'image/png') {
+            imagealphablending($dest, false);
+            imagesavealpha($dest, true);
+        }
 
-            Visual style: clinical
-            Mood: intelligent, calm, modern, educational
-            Audience tone: clinicians
-            Angle: clinical
+        imagecopyresampled($dest, $src, 0, 0, $xOffset, $yOffset, $newW, $newH, $newW, $newH);
 
-            Subject:
-            An abstract, artistic representation of the The Spark Within: CO₂ and the Awakening of Mitochondria.
-            No explicit organs. No medical procedures. No disease depiction.
+        // 5. Save/Output
+        switch ($mime) {
+            case 'image/jpeg': imagejpeg($dest, $outputPath, 90); break;
+            case 'image/png':  imagepng($dest, $outputPath);     break;
+            case 'image/webp': imagewebp($dest, $outputPath);    break;
+        }
 
-            Composition:
-            Clean layout with strong visual hierarchy.
-            At least 40% negative space reserved for text overlay.
-            Center or upper-third visual focus.
-            No clutter.
+        imagedestroy($src);
+        imagedestroy($dest);
+        
+        // Delete temp image safely (only if it's a temp file)
+        $relativeTempPath = str_replace(
+            Storage::disk('public')->path(''),
+            '',
+            $imagePath
+        );
 
-            Color palette:
-            Muted scientific tones with subtle cinematic lighting.
-            Cool blues and deep shadows with soft glow accents.
+        Storage::disk('public')->delete($relativeTempPath);
 
-            Rendering style:
-            High-quality cinematic scientific illustration with depth and atmosphere.
-            Not photorealistic.
-            Not cartoonish.
-            Not surreal.
-
-            Technical requirements:
-            Portrait orientation, 9:16 aspect ratio.
-            High resolution suitable for 1080x1920 output.
-
-            NO text, NO words, NO letters, NO numbers.
-            NO logos, NO branding, NO watermarks.
-            NO social media UI elements.
-            NO medical equipment, hospitals, syringes, needles.
-            NO diseases, injuries, pain, suffering.
-            NO labeled organs.
-            NO exaggerated anatomy.
-            NO before-and-after visuals.
-            NO dramatic or sensational imagery.
-
-            Place the Heading on the generated image : \"The Carbonated Body\"
-            Place the chapter name on the generated image : CHAPTER 5
-            Place the chapter title on the generated image : The Spark Within: CO₂ and the Awakening of Mitochondria
-            Write 5-6 Bullet points on image extract from provided chapter content
-
-            Place the provided book cover as a thumbnail on the generated image. cover book is provided here \"{$imagePath}\".   
-        ";
-
-        $ch = curl_init("https://api.openai.com/v1/images/edits");
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer {$apiKey}"
+        return response()->json([
+            'status' => true,
+            'image_name' => basename($outputPath),
+            'image'  => asset('storage/uploads/gemini-crop/' . basename($outputPath))
         ]);
-
-        curl_setopt($ch, CURLOPT_POSTFIELDS, [
-            "model" => "gpt-image-1",
-            "prompt" => $prompt,
-            "image" => new CURLFile($imagePath, "image/png"),
-            "size" => "1024x1024"
-        ]);
-
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        // cleanup
-        $result = json_decode($response, true);
-        // dd($result);
-        $base64 = $result['data'][0]['b64_json'];
-        // Create data URL
-        $imageUrl = 'data:image/png;base64,' . $base64;
-        echo '<img src="' . $imageUrl . '" />';
-        dd("hello");
     }
     
 
