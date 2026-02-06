@@ -73,8 +73,8 @@ class AiPostGenerationController extends ResponseController
 
     private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design)
     {
-        // $images = $this->getImages($chapter, $postType, $slidesCount, $design);
-        // dd($images);
+        $images = $this->generateGeminiImage($chapter, $postType, $slidesCount, $design);
+        dd($images);
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
         
@@ -272,7 +272,7 @@ class AiPostGenerationController extends ResponseController
             On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: {$chapter->chapter_title}, content angle: {$design['content_angle']}.
 
             THUMBNAIL ELEMENT:
-            In the bottom corner, place the EXACT provided book cover image from {$imagePath} as a static thumbnail.
+            In the bottom-right corner, place the EXACT provided book cover image from {$imagePath} as a static thumbnail.
             Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
             Preserve the original text, colors, typography, proportions, and layout exactly as provided.
             The cover must be used as-is, unchanged, and scaled down only.
@@ -335,68 +335,75 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    public function generateSlide(Request $request) 
+    public function generateGeminiImage($chapter, $postType, $slidesCount, $design) 
     {
-        $image = asset(Storage::url('assets/cover-image.png'));
-        // dd($image);
+        $imagepath = Storage::disk('public')->path('assets/cover-image.png');
+        
         $apiKey = Config::get('constant.gemini_keys.key');
-    //    dd($apiKey);
-        // Your requirement variables
-        $design = $request->input('design'); // color, placement, font, etc.
-        $slideText = $request->input('slide_texts');
-        $concept = $request->input('image_concept');
- 
-        // 1. Construct the reasoning-based prompt
-        $prompt = "A professional 9:16 vertical infographic layout for a medical educational post. 
-                TITLE: 'The Carbonated Body' (Large, elegant serif font at the top). 
-                SUBTITLE: 'Chapter 20: Carbon Dioxide and the Sugar Trap CO₂ as a Key to Unlocking Diabetes' (Positioned below the title).
+        //    dd($apiKey);
 
-                VISUAL CENTERPIECE: Visual style: Hyper-Realistic
-                Mood: Curious & Thoughtful
-                Audience tone: Clinical / Professional
-                Angle: Clinical Perspective
+        $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram posts.
 
-                CONTENT SECTION:
-                On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: Carbon Dioxide and the Sugar Trap CO₂ as a Key to Unlocking Diabetes, content angle: Clinical Perspective.
+                IMPORTANT:
+                Leave a wide, uniform blank margin on all four sides of the image.
+                This margin should remain completely empty with no text, no graphics, no frames, and no decorative elements.
+                The blank margin acts as a safety zone for a watermark or logo.
+
+                All visible content must be placed strictly inside a centered inner safe area.
+
+                Content to include inside the safe area:
+                - A semi-transparent illustration with a highlighted {$chapter->chapter_title}
+                - Title at the top: 'The Carbonated Body'
+                - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
+                - On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+                - Provide plenty of breathing space between the content and the blank margins
 
                 THUMBNAIL ELEMENT:
-                In the left bottom corner, place the EXACT provided book cover image from provided as a static thumbnail.
-                Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
-                Preserve the original text, colors, typography, proportions, and layout exactly as provided.
-                The cover must be used as-is, unchanged, and scaled down only.
+                - In the bottom-left corner, place the EXACT cover image :{$imagepath} as a static thumbnail.
+                - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
+                - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
+                - The cover must be used as-is, unchanged, and scaled down only.
 
-                TECHNICAL SPECIFICATIONS:
-                - Aspect Ratio: 9:16 (Vertical).
-                - Composition: High-end medical journal aesthetic.
-                - Layout: Top-heavy text, center visual, bottom-right thumbnail.
-                - Ensure all text is legible and centered within the 1080x1920 frame with safe-zone margins to prevent cropping.
+                VISUAL CENTERPIECE: 
+                Visual style: {$design['image_style']}
+                Mood: {$design['visual_mood']}
+                Audience tone: {$design['human_presence']}
+                Angle: {$design['content_angle']}
 
-                IMPORTANT LAYOUT RULES:
-                - Use a 2:3 vertical layout (1024x1536).
-                - Keep all text within safe margins (at least 12% padding top and bottom).
-                - Title must be fully visible at the top.
-                - Book cover thumbnail must be fully visible at the bottom-right.
-                - No cropping or edge-clipped text
-                - Uniform 25% white negative space border on all four sides, creating a clean gallery-style matting. Ensure no text or 
-                  design elements bleed into this white margin.";
+                Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
 
+              dd($imagepath,$prompt); 
         try{
             // 2. Execute the Request
-            $response = Http::withHeaders(['Content-Type' => 'application/json'])
-                ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={$apiKey}", [
-                    "contents" => [["parts" => [["text" => $prompt]]]],
-                    "generationConfig" => [
-                        "imageConfig" => [
-                            "aspectRatio" => "1:1", // Use '9:16' for Stories
-                            "imageSize" => "HD"   // Options: 'SD', 'HD', '2K', '4K'
+
+            $response = Http::timeout(90)
+                ->retry(2, 2000, function ($exception) {
+                    return $exception instanceof \Illuminate\Http\Client\ConnectionException;
+                })
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                ])
+                ->post(
+                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={$apiKey}",
+                    [
+                        "contents" => [
+                            ["parts" => [["text" => $prompt]]]
+                        ],
+                        "generationConfig" => [
+                            "imageConfig" => [
+                                "aspectRatio" => "1:1",
+                                "imageSize" => "SD",
+                            ]
                         ]
                     ]
-                ]);
+                );
                 
-                if ($response->failed()) {
-                    // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")
-                    dd($apiKey,$response->json()); 
-                }
+            if ($response->failed()) {
+                // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")
+                // dd($apiKey,$response->json()); 
+
+            }
+
             if ($response->successful()) {
                 $data = $response->json();
                 
@@ -416,13 +423,18 @@ class AiPostGenerationController extends ResponseController
                 // This creates a "URL" that contains the image itself
                 $dataUrl = "data:{$mimeType};base64,{$base64}";
 
-                return response()->json([
-                    'status' => 'success',
-                    'image_url' => $dataUrl
-                ]);
+                // return response()->json([
+                //     'status' => 'success',
+                //     'image_url' => $dataUrl
+                // ]);
+                return $dataUrl;
             }
             // return response()->json(['error' => 'Generation Failed'], 500);
         } catch (\Exception $e) {
+            Log::error('Gemini image failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
             return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
         }
 
