@@ -66,6 +66,8 @@ class AiPostGenerationController extends ResponseController
             return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
         } elseif (str_contains($modelChoice, 'claude')) {
             return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
+        }else{
+            return $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
         }
 
         return $this->sendError('Invalid Model Selected', [], 400);
@@ -73,8 +75,7 @@ class AiPostGenerationController extends ResponseController
 
     private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design)
     {
-        $images = $this->generateGeminiImage($chapter, $postType, $slidesCount, $design);
-        dd($images);
+       
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
         
@@ -102,7 +103,7 @@ class AiPostGenerationController extends ResponseController
             // dd($structuredData);
             /** ------------------ IMAGE GENERATION ------------------ */
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model);
 
             /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
@@ -126,7 +127,7 @@ class AiPostGenerationController extends ResponseController
                 sleep(2); // wait before retry
             }
 
-            return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
+            return $this->sendError('Error generating content chatgpt', ['error' => $e->getMessage()], 500);
         }
     }
 
@@ -174,7 +175,7 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            //$images = $this->getImages($chapter, $postType, $slidesCount, $design);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -185,7 +186,7 @@ class AiPostGenerationController extends ResponseController
                 'model' => $model,  
                 'post_type' => $postType,
                 'slides' => $slidesCount,
-                //'images' => $images,
+                'images' => $images,
                 'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
@@ -193,8 +194,99 @@ class AiPostGenerationController extends ResponseController
             ], 'Content generated successfully', 200);
 
         } catch (\Exception $e) {
-            return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
+            return $this->sendError('Error generating content claude', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    Private function generateWithGemini($model, $prompt, $chapter, $postType, $slidesCount, $design)
+    {
+        $systemInstruction = $this->getSystemInstruction($chapter);
+        $apiKey = Config::get('constant.gemini_keys.key');
+        try {
+            
+            $response = Http::withHeaders([
+                'x-goog-api-key' => $apiKey,
+                'Content-Type'  => 'application/json',
+            ])->post(
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+                [
+                    'system_instruction' => [
+                        'parts' => [
+                            [
+                                'text' => $systemInstruction
+                            ]
+                        ]
+                    ],
+                    'contents' => [
+                        [
+                            'role' => 'user',
+                            'parts' => [
+                                [
+                                    'text' => $prompt
+                                ]
+                            ]
+                        ]
+                    ],
+                    // 'generationConfig' => [
+                    //     'temperature' => 0.7,
+                    //     'maxOutputTokens' => 600
+                    // ]
+                ]
+            );
+
+            // 1. Check for API Errors (like 401, 400, 500)
+            if ($response->failed()) {
+                $errorData = $response->json();
+                $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error';
+                return $this->sendError("Gemini API Error: " . $errorMessage);
+            }
+            // dd($response->json());
+           $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+
+            // Remove any surrounding quotes or whitespace
+            $text = trim($text, "\"\n ");
+
+            // Decode JSON
+            $data = json_decode($text, true);
+
+            // Debug log
+            \Log::info('Gemini Response:', (array) $data);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception('Invalid JSON returned from Gemini: ' . json_last_error_msg());
+            }
+           
+            if (is_null($data)) {
+                throw new \Exception("Invalid JSON format received from Gemini.");
+            }
+            
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model);
+
+            return $this->sendResponse([
+                'caption' => $data['caption'],
+                'hashtags' => $data['hashtags'],
+                'script' => $data['script'],
+                'title' => $data['title'],
+                'model' => $model,  
+                'post_type' => $postType,
+                'slides' => $slidesCount,
+                'images' => $images,
+                'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
+                'chapter_title' => $chapter->chapter_title,
+                'chapter_id' => $chapter->id,
+                'ai_prompt' => $prompt,
+            ], 'Content generated successfully', 200);
+
+        } catch (\Exception $e) {
+            return $this->sendError('Error generating content gemini', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+
+    private function extract(string $text, string $key): string
+    {
+        preg_match("/{$key}:\s*(.*)/i", $text, $matches);
+        return $matches[1] ?? '';
     }
 
     // private function generateAIImage($prompt, $model = 'dall-e-3')
@@ -269,7 +361,7 @@ class AiPostGenerationController extends ResponseController
           
 
             CONTENT SECTION:
-            On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing these key concepts: {$chapter->chapter_title}, content angle: {$design['content_angle']}.
+            - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}.
 
             THUMBNAIL ELEMENT:
             In the bottom-right corner, place the EXACT provided book cover image from {$imagePath} as a static thumbnail.
@@ -294,7 +386,7 @@ class AiPostGenerationController extends ResponseController
         return $prompt;
     }
 
-    private function getImages($chapter, $postType, $slidesCount, $design)
+    private function getImages($chapter, $postType, $slidesCount, $design, $model)
     {
         // dd($design);
         $images = [];
@@ -303,63 +395,76 @@ class AiPostGenerationController extends ResponseController
             
             for ($i = 0; $i < $slidesCount; $i++) {
 
-                $imagePrompt = $this->buildSlideImagePrompt(
-                    $chapter,
-                    $design,
-                    $i + 1
-                );
+                if($model === 'gemini'){
+                    $images[] = [
+                        'slide' => $i + 1,
+                        'image_url' => $this->generateGeminiImage($chapter, $design),
+                    ];
 
-                $images[] = [
-                    'slide' => $i + 1,
-                    'image_url' => $this->generateAIImage($imagePrompt),
-                ];
+                    sleep(3); 
+                }else{
+                    $imagePrompt = $this->buildSlideImagePrompt(
+                        $chapter,
+                        $design,
+                        $i + 1
+                    );
 
-                 sleep(3); // REQUIRED (2–5 seconds)
+                    $images[] = [
+                        'slide' => $i + 1,
+                        'image_url' => $this->generateAIImage($imagePrompt),
+                    ];
+
+                    sleep(3); // REQUIRED (2–5 seconds)
+                }
+                
             }
 
         } else {
             // Single post
-            $imagePrompt = $this->buildSlideImagePrompt(
-                $chapter,
-                $design,
-                1
-            );
+            if($model === 'gemini'){
+                $images[] = [
+                    'slide' => 1,
+                    'image_url' => $this->generateGeminiImage($chapter, $design),
+                ];
+            }else{
+                $imagePrompt = $this->buildSlideImagePrompt(
+                    $chapter,
+                    $design,
+                    1
+                );
            
-            $images[] = [
-                'slide' => 1,
-                'image_url' => $this->generateAIImage($imagePrompt),
-            ];
+                $images[] = [
+                    'slide' => 1,
+                    'image_url' => $this->generateAIImage($imagePrompt),
+                ];  
+            }
         }
 
         return $images;
     }
 
 
-    public function generateGeminiImage($chapter, $postType, $slidesCount, $design) 
+    public function generateGeminiImage($chapter, $design) 
     {
-        $imagepath = Storage::disk('public')->path('assets/cover-image.png');
+        $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+        $imagepath =  base64_encode(file_get_contents($image_storage_path));
         
         $apiKey = Config::get('constant.gemini_keys.key');
         //    dd($apiKey);
 
         $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram posts.
-
-                IMPORTANT:
-                Leave a wide, uniform blank margin on all four sides of the image.
-                This margin should remain completely empty with no text, no graphics, no frames, and no decorative elements.
-                The blank margin acts as a safety zone for a watermark or logo.
-
+        
                 All visible content must be placed strictly inside a centered inner safe area.
 
                 Content to include inside the safe area:
                 - A semi-transparent illustration with a highlighted {$chapter->chapter_title}
                 - Title at the top: 'The Carbonated Body'
                 - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
-                - On a clean, semi-transparent overlay or clear negative space, include 5 concise bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+                - On a clean, semi-transparent overlay or clear negative space, include A single concise sentence summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
                 - Provide plenty of breathing space between the content and the blank margins
 
                 THUMBNAIL ELEMENT:
-                - In the bottom-left corner, place the EXACT cover image :{$imagepath} as a static thumbnail.
+                - In the bottom-left corner, place the EXACT cover image provided in payload as a static thumbnail.
                 - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
                 - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
                 - The cover must be used as-is, unchanged, and scaled down only.
@@ -372,11 +477,12 @@ class AiPostGenerationController extends ResponseController
 
                 Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
 
-              dd($imagepath,$prompt); 
+            //   dd($imagepath,$prompt); 
+                            // - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
         try{
             // 2. Execute the Request
 
-            $response = Http::timeout(90)
+           $response = Http::timeout(90)
                 ->retry(2, 2000, function ($exception) {
                     return $exception instanceof \Illuminate\Http\Client\ConnectionException;
                 })
@@ -387,7 +493,18 @@ class AiPostGenerationController extends ResponseController
                     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={$apiKey}",
                     [
                         "contents" => [
-                            ["parts" => [["text" => $prompt]]]
+                            ["parts" => [
+                                [
+                                    "inline_data" => [
+                                        "mime_type" => "image/png",
+                                        "data" => $imagepath,
+                                    ]
+                                ],
+                                ["text" => $prompt]
+                                
+                                ]
+                            
+                            ]
                         ],
                         "generationConfig" => [
                             "imageConfig" => [
@@ -397,36 +514,22 @@ class AiPostGenerationController extends ResponseController
                         ]
                     ]
                 );
-                
+            
             if ($response->failed()) {
-                // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")
-                // dd($apiKey,$response->json()); 
+                // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
+               return $this->sendError("Gemini API Error: ", $response->json());
 
             }
 
             if ($response->successful()) {
                 $data = $response->json();
-                
+
                 // 3. Extract Base64 and save as URL
-                // $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
-                // $imageName = 'insta_' . uniqid() . '.png';
-                // Storage::disk('public')->put("posts/{$imageName}", base64_decode($base64));
-
-                // return response()->json([
-                //     'status' => 'success',
-                //     'image_url' => asset("storage/posts/{$imageName}")
-                // ]);
-
                 $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
                 $mimeType = $data['candidates'][0]['content']['parts'][0]['inlineData']['mimeType'] ?? 'image/png';
 
                 // This creates a "URL" that contains the image itself
                 $dataUrl = "data:{$mimeType};base64,{$base64}";
-
-                // return response()->json([
-                //     'status' => 'success',
-                //     'image_url' => $dataUrl
-                // ]);
                 return $dataUrl;
             }
             // return response()->json(['error' => 'Generation Failed'], 500);
@@ -434,8 +537,9 @@ class AiPostGenerationController extends ResponseController
             Log::error('Gemini image failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
+                'error' => $e->getMessage()
             ]);
-            return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
+            return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
         }
 
         
@@ -490,7 +594,7 @@ class AiPostGenerationController extends ResponseController
         based on provided user prompt using chapter content:'$chapter->content_title'
         You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
-        'hashtags': A string of 10-15 trending hashtags as comma separated values.
+        'hashtags': A string of 10-15 trending hashtags as comma separated values (include # symbol).
         'script': A short script.
         'title': A scroll-stopping headline.";
 
