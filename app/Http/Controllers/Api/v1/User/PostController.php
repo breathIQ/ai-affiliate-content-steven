@@ -45,7 +45,7 @@ class PostController extends ResponseController
                 // Get primary media
                 $media = $post->media->sortBy('media_order')->first();
                 $mediaUrl = $media ? asset(Storage::url($media->media_path)) : null;
-
+                $media_type = $media ? $media->media_type : null;
                 // Parse hashtags
                 $hashtagsCount = 0;
                 if ($post->hastag) {
@@ -60,14 +60,15 @@ class PostController extends ResponseController
                 return [
                     'id' => $post->id,
                     'media' => $mediaUrl,
-                    'media_type' => $media->media_type,
+                    'media_type' => $media_type,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
                     'chapter_name' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'), // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
                     'ai_model' => $post->ai_model,
                     'ai_generated' => true,
-                    'status' => $post->status !='published' ? 'Failed' : 'Published',
+                    // 'status' => $post->status !='published' ? 'Failed' : 'Published',
+                    'status' => $post->status,
                     'created_at' => $post->created_at->format('M d, Y')
                 ];
             });
@@ -112,12 +113,13 @@ class PostController extends ResponseController
             });
 
             // Published platforms
-            $published_platforms = $post->platforms()->where('status', 'published')->pluck('platform')->toArray();
+            // $published_platforms = $post->platforms()->where('status', 'published')->pluck('platform')->toArray();
+            $published_platforms = $post->platforms()->pluck('platform')->toArray();
             // Total clicks across all platforms
             $total_clicks = $post->total_clicks;
             // Clicks per platform
             $platform_clicks = PostPlatform::where('post_id', $post->id)
-                ->where('status', 'published')
+               // ->where('status', 'published')
                 ->pluck('clicks', 'platform')
                 ->toArray();
 
@@ -199,11 +201,11 @@ class PostController extends ResponseController
                 'caption'      => $request->caption,
                 'script'       => $request->script,
                 'media_assets'    => $request->media_assets,
-                'status'       => $request->status,
+                'status'       => 'processing',
                 'ai_model'     => $request->ai_model,
                 'ai_prompt'     => $request->ai_prompt,
-                // 'scheduled_at'=> $request->scheduled_at ?? null,
-                'published_at'=> $request->status === 'published' ? now() : null,
+                // 'published_at'=> $request->status === 'published' ? now() : null,
+                 'published_at'=> null,
                 'hastag' => $request->hashtags,
                 'affiliate_url' => $request->affiliate_url,
                 'chapter_name' => $chapterName->chapter,
@@ -339,7 +341,7 @@ class PostController extends ResponseController
                     PostPlatform::create([
                         'post_id' => $post->id,
                         'platform' => $platform,
-                        'status' => 'pending'   // need to change this to pending
+                        'status' => 'processing'   
                     ]);
                 }
             }

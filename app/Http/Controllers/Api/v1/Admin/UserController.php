@@ -197,7 +197,8 @@ class UserController extends ResponseController
                 'status' => $post->status,
                 'created_at' => $post->created_at->format('M d, Y'),
                 // Published platforms
-                'published_platforms' => $post->platforms()->where('status', 'published')->pluck('platform')->toArray(),
+                // 'published_platforms' => $post->platforms()->where('status', 'published')->pluck('platform')->toArray(),
+                'published_platforms' => $post->platforms()->pluck('platform')->toArray(),
                 // Total clicks across all platforms
                 'total_clicks' => $post->total_clicks,
                 // Clicks per platform

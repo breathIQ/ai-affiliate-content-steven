@@ -79,7 +79,7 @@ class UserDashboardController extends ResponseController
                 ->map(function ($post) {
                     $media = $post->media->sortBy('media_order')->first();
                     $mediaUrl = $media ? asset(Storage::url($media->media_path)) : null;
-                    
+                    $media_type = $media ? $media->media_type : null;
                     // Parse hashtags count
                     $hashtagsCount = 0;
                     if ($post->hastag) {
@@ -96,6 +96,7 @@ class UserDashboardController extends ResponseController
                     return [
                         'id' => $post->id,
                         'media' => $mediaUrl, 
+                        'media_type' => $media_type,
                         'post_content' => Str::limit($post->caption ?? $post->script, 50), // Use caption or script as content
                         'chapter_name' => $post->chapter->chapter ?? $post->chapter->chapter_title ?? 'N/A',
                         'hashtags_count' => $hashtagsCount,
@@ -116,7 +117,7 @@ class UserDashboardController extends ResponseController
 
             $data = [
                 'stats' => [
-                    'generated' => $postsGenerated,
+                    'generated' =>  $postsGenerated,
                     //'drafts' => $draftPosts,
                     //'scheduled' => $scheduledPosts,
                     'total_clicks' => $affiliateClicks,

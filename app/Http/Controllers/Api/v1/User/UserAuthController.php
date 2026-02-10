@@ -91,13 +91,13 @@ class UserAuthController extends ResponseController
             }
 
             // Check if account is inactive
-            if ($user->status == 0 || $user->status == 2) {
-                return $this->sendError(
-                    'Your account is inactive. Please contact admin.',
-                    [],
-                    403
-                );
-            }
+            // if ($user->status == 0 || $user->status == 2) {
+            //     return $this->sendError(
+            //         'Your account is inactive. Please contact admin.',
+            //         [],
+            //         403
+            //     );
+            // }
             
             // Check password
             if ($user && Hash::check($request->password, $user->password)) {

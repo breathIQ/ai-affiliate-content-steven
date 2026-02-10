@@ -31,7 +31,7 @@ class StorePostRequest extends FormRequest
             'script' => 'nullable|string',
 
             'media_assets' => 'required|in:single,carousel',
-            'status' => 'required|in:draft,scheduled,published',
+            'status' => 'required|in:published,failed,processing',
 
             'ai_model' => 'nullable|string',
             'ai_prompt' => 'nullable|string',
