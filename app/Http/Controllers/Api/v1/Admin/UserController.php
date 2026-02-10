@@ -123,7 +123,7 @@ class UserController extends ResponseController
                 return [
                     'id' => $post->id,
                     'media' => $mediaUrl,
-                    'media_type' => $media->media_type,
+                    'media_type' => $media->media_type ?? null,
                     'post_content' => Str::limit($post->caption ?? $post->script, 80),
                     'chapter_name' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
@@ -213,6 +213,32 @@ class UserController extends ResponseController
             return $this->sendError('Post not found.', [], 404);
         } catch (\Exception $e) {
             return $this->sendError('Failed to fetch post details.', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    
+    public function deletePost($id)
+    {
+        try {
+            $post =  Post::with('media')->findOrFail($id);
+
+            if (!$post) {
+                return $this->sendError('Post not found', [], 404);
+            }
+
+            // Delete media files from storage
+            foreach ($post->media as $media) {
+                if (Storage::disk('public')->exists($media->media_path)) {
+                    Storage::disk('public')->delete($media->media_path);
+                }
+            }
+
+            $post->delete();
+
+            return $this->sendResponse([], 'Post deleted successfully', 200);
+
+        } catch (\Exception $e) {
+            return $this->sendError('Failed to delete post', ['error' => $e->getMessage()], 500);
         }
     }
 

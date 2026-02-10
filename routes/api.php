@@ -70,6 +70,7 @@ Route::group(['prefix' => 'v1/admin'], function () {
         // Route::post('update-status/{id}', [UserController::class, 'updateUserActiveStatus']);
         Route::get('user/{id}/posts', [UserController::class, 'getUserPosts']);
         Route::get('post/{postId}', [UserController::class, 'getPostDetail']);
+        Route::delete('post/{postId}', [UserController::class, 'deletePost']);
 
 
         //***************file functionality************************* */
