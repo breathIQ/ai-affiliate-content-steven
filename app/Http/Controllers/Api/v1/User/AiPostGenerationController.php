@@ -40,6 +40,7 @@ class AiPostGenerationController extends ResponseController
             'design.content_angle' => 'required|string',
             'design.human_presence' => 'required|string',
             'design.visual_mood' => 'required|string',
+            'text_format' => 'required|string|in:paragraph,bullet_points',
         ]);
 
         if ($validator->fails()) {
@@ -57,23 +58,24 @@ class AiPostGenerationController extends ResponseController
         $postType    = $request->post_type;
         $slidesCount = (int) $request->slides;
         $design      = $request->design ?? null;
+        $textFormat  = $request->text_format;
 
         // Final prompt jo AI ko jayega
         // $finalPrompt = "Chapter: {$chapter->content}\n\nTask: {$userPrompt}";
         $finalPrompt = "Task: {$userPrompt}";
 
         if (str_contains($modelChoice, 'gpt')) {
-            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
+            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
         } elseif (str_contains($modelChoice, 'claude')) {
-            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
+            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
         }else{
-            return $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design);
+            return $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
         }
 
         return $this->sendError('Invalid Model Selected', [], 400);
     }
 
-    private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design)
+    private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design,$textFormat)
     {
        
       // AI ko specific format sikhane ke liye prompt
@@ -103,7 +105,7 @@ class AiPostGenerationController extends ResponseController
             // dd($structuredData);
             /** ------------------ IMAGE GENERATION ------------------ */
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
 
             /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
@@ -111,7 +113,7 @@ class AiPostGenerationController extends ResponseController
                 'hashtags' => $structuredData['hashtags'],
                 'script' => $structuredData['script'],
                 'title' => $structuredData['title'],
-                'model' => $model,
+                'model' => 'ChatGPT', //$model,
                 'post_type' => $postType,
                 'slides' => $slidesCount,
                 'images' => $images,
@@ -132,7 +134,7 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $design)
+    private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $design,$textFormat)
     {
         // System Instruction for structured output like your UI
         $systemInstruction = $this->getSystemInstruction($chapter);
@@ -175,7 +177,7 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
 
             // 3. Send successful response to React
             return $this->sendResponse([
@@ -183,7 +185,7 @@ class AiPostGenerationController extends ResponseController
                 'hashtags' => $structuredData['hashtags'] ?? '',
                 'script' => $structuredData['script'] ?? '',
                 'title' => $structuredData['title'] ?? '',
-                'model' => $model,  
+                'model' => 'Claude', //$model,  
                 'post_type' => $postType,
                 'slides' => $slidesCount,
                 'images' => $images,
@@ -198,7 +200,7 @@ class AiPostGenerationController extends ResponseController
         }
     }
 
-    Private function generateWithGemini($model, $prompt, $chapter, $postType, $slidesCount, $design)
+    Private function generateWithGemini($model, $prompt, $chapter, $postType, $slidesCount, $design,$textFormat)
     {
         $systemInstruction = $this->getSystemInstruction($chapter);
         $apiKey = Config::get('constant.gemini_keys.key');
@@ -260,14 +262,14 @@ class AiPostGenerationController extends ResponseController
                 throw new \Exception("Invalid JSON format received from Gemini.");
             }
             
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
 
             return $this->sendResponse([
                 'caption' => $data['caption'],
                 'hashtags' => $data['hashtags'],
                 'script' => $data['script'],
                 'title' => $data['title'],
-                'model' => $model,  
+                'model' => 'Gemini', //$model,  
                 'post_type' => $postType,
                 'slides' => $slidesCount,
                 'images' => $images,
@@ -345,7 +347,7 @@ class AiPostGenerationController extends ResponseController
         
     }
 
-    private function buildSlideImagePrompt($chapter, $design, $slideNumber)
+    private function buildSlideImagePrompt($chapter, $design, $slideNumber,$textFormat)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         
@@ -361,7 +363,7 @@ class AiPostGenerationController extends ResponseController
           
 
             CONTENT SECTION:
-            - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}.
+            - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}.
 
             THUMBNAIL ELEMENT:
             In the bottom-right corner, place the EXACT provided book cover image from {$imagePath} as a static thumbnail.
@@ -386,7 +388,7 @@ class AiPostGenerationController extends ResponseController
         return $prompt;
     }
 
-    private function getImages($chapter, $postType, $slidesCount, $design, $model)
+    private function getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat)
     {
         // dd($design);
         $images = [];
@@ -398,7 +400,7 @@ class AiPostGenerationController extends ResponseController
                 if($model === 'gemini'){
                     $images[] = [
                         'slide' => $i + 1,
-                        'image_url' => $this->generateGeminiImage($chapter, $design),
+                        'image_url' => $this->generateGeminiImage($chapter, $design,$textFormat),
                     ];
 
                     sleep(3); 
@@ -406,7 +408,8 @@ class AiPostGenerationController extends ResponseController
                     $imagePrompt = $this->buildSlideImagePrompt(
                         $chapter,
                         $design,
-                        $i + 1
+                        $i + 1,
+                        $textFormat
                     );
 
                     $images[] = [
@@ -424,13 +427,14 @@ class AiPostGenerationController extends ResponseController
             if($model === 'gemini'){
                 $images[] = [
                     'slide' => 1,
-                    'image_url' => $this->generateGeminiImage($chapter, $design),
+                    'image_url' => $this->generateGeminiImage($chapter, $design,$textFormat),
                 ];
             }else{
                 $imagePrompt = $this->buildSlideImagePrompt(
                     $chapter,
                     $design,
-                    1
+                    1,
+                    $textFormat
                 );
            
                 $images[] = [
@@ -444,7 +448,7 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    public function generateGeminiImage($chapter, $design) 
+    public function generateGeminiImage($chapter, $design,$textFormat) 
     {
         $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
         $imagepath =  base64_encode(file_get_contents($image_storage_path));
@@ -460,7 +464,7 @@ class AiPostGenerationController extends ResponseController
                 - A semi-transparent illustration with a highlighted {$chapter->chapter_title}
                 - Title at the top: 'The Carbonated Body'
                 - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
-                - On a clean, semi-transparent overlay or clear negative space, include A single concise sentence summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+                - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
                 - Provide plenty of breathing space between the content and the blank margins
 
                 THUMBNAIL ELEMENT:
