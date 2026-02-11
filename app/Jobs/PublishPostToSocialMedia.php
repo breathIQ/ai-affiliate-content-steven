@@ -116,7 +116,7 @@ class PublishPostToSocialMedia implements ShouldQueue
     private function createIgContainer($igId, $token, $media, $isCarouselItem)
     {
         $url =  asset(Storage::url($media->media_path));
-        \Log::info("Instagram account published section: createIgContainer".$url);
+        \Log::info("media path:".$url);
         $fullCaption = $this->getFormattedCaption('instagram');
         $params = [
             'access_token' => $token,

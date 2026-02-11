@@ -109,7 +109,7 @@ class AiPostGenerationController extends ResponseController
 
             /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
-                'caption' => $structuredData['caption'],
+                'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'],
                 'script' => $structuredData['script'],
                 'title' => $structuredData['title'],
@@ -181,7 +181,7 @@ class AiPostGenerationController extends ResponseController
 
             // 3. Send successful response to React
             return $this->sendResponse([
-                'caption' => $structuredData['caption'] ?? '',
+                'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'] ?? '',
                 'script' => $structuredData['script'] ?? '',
                 'title' => $structuredData['title'] ?? '',
@@ -265,7 +265,7 @@ class AiPostGenerationController extends ResponseController
             $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
 
             return $this->sendResponse([
-                'caption' => $data['caption'],
+                'caption' => $data['title'] . PHP_EOL . $data['caption'],
                 'hashtags' => $data['hashtags'],
                 'script' => $data['script'],
                 'title' => $data['title'],
@@ -351,7 +351,7 @@ class AiPostGenerationController extends ResponseController
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         
-        $prompt = "A professional 9:16 vertical infographic layout for a medical educational post. 
+        $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
             SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
 
@@ -372,10 +372,12 @@ class AiPostGenerationController extends ResponseController
             The cover must be used as-is, unchanged, and scaled down only.
 
             TECHNICAL SPECIFICATIONS:
-            - Aspect Ratio: 9:16 (Vertical).
-            - Composition: High-end medical journal aesthetic.
-            - Layout: Top-heavy text, center visual, bottom-right thumbnail.
-            - Ensure all text is legible and centered within the 1080x1920 frame with safe-zone margins to prevent cropping.
+           - All visible content must be placed strictly inside a centered inner safe area.
+           - Aspect Ratio: 1:1 (Square).
+           - Image Size: SD (Standard Definition).
+           - Composition: High-end medical journal aesthetic.
+           - Layout: Top-heavy text, center visual, bottom-right thumbnail.
+           - Ensure all text is legible and centered within the 1080x1920 frame with safe-zone margins to prevent cropping.
             
             IMPORTANT LAYOUT RULES:
             - Use a 2:3 vertical layout (1024x1536).
@@ -584,10 +586,8 @@ class AiPostGenerationController extends ResponseController
         //     OUTPUT FORMAT (JSON ONLY):
         //     {
         //         'title': 'Short headline',
-        //         'bullets': [],
         //         'caption': '',
         //         'script': '',
-        //         'cta': '',
         //         'hashtags': ''
         //     }
         //     Note:- You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations
@@ -595,7 +595,11 @@ class AiPostGenerationController extends ResponseController
 
         $systemInstruction = "You are a professional social media content engine for a science book titled 'The Carbonated Body'. 
         Your task is to generate SHORT-FORM social media content for Instagram and TikTok posts, 
-        based on provided user prompt using chapter content:'$chapter->content_title'
+        based on provided user prompt using chapter content:'$chapter->content'
+        IMPORTANT RULES (MANDATORY):
+        -Do NOT invent facts beyond the chapter content provided.
+        -Content must be educational only, not medical advice.
+        
         You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values (include # symbol).
