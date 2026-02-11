@@ -291,30 +291,37 @@ class PostController extends ResponseController
                         preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/', $mediaItem['file'], $matches);
 
                         if (count($matches) !== 3) {
+                            \Log::error('Invalid base64 data: ' . $mediaItem['file']);
                             continue;
                         }
 
                         $mime = $matches[1];
-                        $base64Data = $matches[2];
+                        $base64Data = preg_replace('/\s+/', '', $matches[2]);
 
                         $mediaType = str_starts_with($mime, 'image/')
                             ? 'image'
                             : (str_starts_with($mime, 'video/') ? 'video' : null);
 
                         if (!$mediaType) {
+                            \Log::error('Unsupported media type: ' . $mime);
                             continue;
                         }
 
                         $extension = match ($mime) {
                             'image/png' => 'png',
                             'image/jpeg' => 'jpg',
-                            'image/webp' => 'webp',
-                            default => 'bin',
+                            // 'image/webp' => 'webp',
+                            default => null,
                         };
 
-                        $binaryData = base64_decode($base64Data);
+                        if (!$extension) {
+                            \Log::error("Unsupported mime type: $mime");
+                            continue;
+                        }
+                        $binaryData = base64_decode($base64Data, true);
 
                         if ($binaryData === false) {
+                            \Log::error('Base64 decode failed for mediaItem');
                             continue;
                         }
 
@@ -322,6 +329,11 @@ class PostController extends ResponseController
                         $path = "posts/media/$filename";
 
                         Storage::disk('public')->put($path, $binaryData);
+                        
+                        if (!Storage::disk('public')->exists($path)) {
+                            \Log::error("Failed to store base64 image at $path");
+                            continue;
+                        }
                     }
                     \Log::info('path--'.$path.'---mediaType--'.$mediaType);
                     if ($path && $mediaType) {
