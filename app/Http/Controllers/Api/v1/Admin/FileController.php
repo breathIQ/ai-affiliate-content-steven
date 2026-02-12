@@ -43,11 +43,18 @@ class FileController extends ResponseController
 
             $file = $request->file('file');
 
-            $path = $file->store('uploads/files', 'public');
+            
+            // Original file name
+            $originalName = $file->getClientOriginalName();
+
+            // Define storage path
+            $storagePath = 'uploads/files/' . $originalName;
+            
+            $file->storeAs('uploads/files', $originalName, 'public');
 
             $record = File::create([
-                'original_name' => $file->getClientOriginalName(),
-                'file_path' => $path,
+                'original_name' => $originalName,
+                'file_path' => $storagePath,
                 'mime_type' => $file->getClientMimeType(),
                 'status' => 1, // Pending
             ]);

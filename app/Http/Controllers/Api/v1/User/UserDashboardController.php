@@ -52,7 +52,7 @@ class UserDashboardController extends ResponseController
             }
 
             // Round to nearest integer or 1 decimal point
-            $growthRate = round($growthRate, 1);
+            $growthRate = round($growthRate, 2);
 
             $postsPublished = $user->posts()->where('status', 'published')->whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])->count();
             
