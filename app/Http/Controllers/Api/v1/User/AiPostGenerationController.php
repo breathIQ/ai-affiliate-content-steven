@@ -473,33 +473,33 @@ class AiPostGenerationController extends ResponseController
 
     public function generateGeminiImage($chapter, $design,$textFormat) 
     {
-        // $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
-        // $imagepath =  base64_encode(file_get_contents($image_storage_path));
+        $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+        $imagepath =  base64_encode(file_get_contents($image_storage_path));
         
-            $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
-            $image = imagecreatefrompng($image_storage_path);
-            // Get original width & height
-            $width = imagesx($image);
-            $height = imagesy($image);
+            // $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+            // $image = imagecreatefrompng($image_storage_path);
+            // // Get original width & height
+            // $width = imagesx($image);
+            // $height = imagesy($image);
 
-            // Desired max size (longest side)
-            $maxSize = 128;
+            // // Desired max size (longest side)
+            // $maxSize = 128;
 
-            // Calculate new width & height proportionally
-            if ($width > $height) {
-                $new_width = $maxSize;
-                $new_height = intval($height * ($maxSize / $width));
-            } else {
-                $new_height = $maxSize;
-                $new_width = intval($width * ($maxSize / $height));
-            }
-            $resized = imagescale($image, $new_width, $new_height); // smaller for Gemini
-            ob_start();
-            imagepng($resized);
-            $imageContents = ob_get_clean();
-            $imagepath = base64_encode($imageContents);
-            imagedestroy($image);
-            imagedestroy($resized);
+            // // Calculate new width & height proportionally
+            // if ($width > $height) {
+            //     $new_width = $maxSize;
+            //     $new_height = intval($height * ($maxSize / $width));
+            // } else {
+            //     $new_height = $maxSize;
+            //     $new_width = intval($width * ($maxSize / $height));
+            // }
+            // $resized = imagescale($image, $new_width, $new_height); // smaller for Gemini
+            // ob_start();
+            // imagepng($resized);
+            // $imageContents = ob_get_clean();
+            // $imagepath = base64_encode($imageContents);
+            // imagedestroy($image);
+            // imagedestroy($resized);
         // dd(strlen($imagepath)/1024);
        
         $affiliate_id = Auth::user()->affiliate_id;
