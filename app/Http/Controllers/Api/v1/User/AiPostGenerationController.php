@@ -395,11 +395,10 @@ class AiPostGenerationController extends ResponseController
 
             TECHNICAL SPECIFICATIONS:
            - All visible content must be placed strictly inside a centered inner safe area.
-           - Aspect Ratio: 1:1 (Square).
            - Image Size: SD (Standard Definition).
            - Composition: High-end medical journal aesthetic.
            - Layout: Top-heavy text, center visual, bottom-right thumbnail.
-           - Ensure all text is legible and centered within the 1080x1920 frame with safe-zone margins to prevent cropping.
+           - Ensure all text is legible and centered within the frame with safe-zone margins.
             
             IMPORTANT LAYOUT RULES:
             - Use a 2:3 vertical layout (1024x1536).
@@ -514,6 +513,7 @@ class AiPostGenerationController extends ResponseController
                 include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
 
                 VISUAL CENTERPIECE: 
+                - Use a 2:3 vertical layout (1024x1536).
                 Visual style: {$design['image_style']}
                 Mood: {$design['visual_mood']}
                 Audience tone: {$design['human_presence']}
