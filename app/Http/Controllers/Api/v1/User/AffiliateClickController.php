@@ -30,24 +30,47 @@ class AffiliateClickController extends ResponseController
             ->where('created_at', '>', now()->subHours(24))
             ->exists();
 
-        if (!$existingClick) {
-            DB::beginTransaction();
-            $affiliateClick = AffiliateClick::create([
-                'post_id'      => $post_id,
-                'referrer'     => $affiliate_id,
-                'platform'     => $platform, // 'instagram', 'tiktok', or 'unknown'
-                'device'       => $device,   // 'mobile' or 'desktop'
-                'ip_address'   => $request->ip(),
-                'user_agent'   => $request->userAgent(),
+        // if (!$existingClick) {
+        //     DB::beginTransaction();
+        //     $affiliateClick = AffiliateClick::create([
+        //         'post_id'      => $post_id,
+        //         'referrer'     => $affiliate_id,
+        //         'platform'     => $platform, // 'instagram', 'tiktok', or 'unknown'
+        //         'device'       => $device,   // 'mobile' or 'desktop'
+        //         'ip_address'   => $request->ip(),
+        //         'user_agent'   => $request->userAgent(),
+        //     ]);
+
+        //     if($platform == 'instagram' || $platform == 'tiktok') {
+        //         PostPlatform::where(['post_id'=>$post_id,'platform'=>$platform])->increment('clicks');
+        //     }
+
+        //     $post->increment('total_clicks');
+        //     DB::commit();
+        // }
+
+        DB::transaction(function () use ($post_id, $affiliate_id, $platform, $device, $request, $post) {
+
+            AffiliateClick::create([
+                'post_id'    => $post_id,
+                'referrer'   => $affiliate_id,
+                'platform'   => $platform,
+                'device'     => $device,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
             ]);
 
-            if($platform == 'instagram' || $platform == 'tiktok') {
-                PostPlatform::where(['post_id'=>$post_id,'platform'=>$platform])->increment('clicks');
+            if (in_array($platform, ['instagram', 'tiktok'])) {
+                PostPlatform::where([
+                    'post_id'  => $post_id,
+                    'platform' => $platform
+                ])->increment('clicks');
             }
 
             $post->increment('total_clicks');
-            DB::commit();
-        }
+
+        }, 5); // retry 5 times automatically if deadlock happens
+
         return redirect()->away($post->affiliate_url);
     }
 

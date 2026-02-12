@@ -478,7 +478,22 @@ class AiPostGenerationController extends ResponseController
         
             $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
             $image = imagecreatefrompng($image_storage_path);
-            $resized = imagescale($image, 128, 128); // smaller for Gemini
+            // Get original width & height
+            $width = imagesx($image);
+            $height = imagesy($image);
+
+            // Desired max size (longest side)
+            $maxSize = 128;
+
+            // Calculate new width & height proportionally
+            if ($width > $height) {
+                $new_width = $maxSize;
+                $new_height = intval($height * ($maxSize / $width));
+            } else {
+                $new_height = $maxSize;
+                $new_width = intval($width * ($maxSize / $height));
+            }
+            $resized = imagescale($image, $new_width, $new_height); // smaller for Gemini
             ob_start();
             imagepng($resized);
             $imageContents = ob_get_clean();
@@ -491,29 +506,31 @@ class AiPostGenerationController extends ResponseController
         $apiKey = Config::get('constant.gemini_keys.key');
         //    dd($apiKey);
 
-        $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram posts.
+        $prompt = "Create a clean, professional medical infographic image optimized for Instagram portrait posts.
         
-                All visible content must be placed strictly inside a centered inner safe area.
+                Target size & format:
+                - Portrait layout, 1080 × 1350 px (4:5 ratio) for maximum feed coverage.
+                - All important content must be placed strictly inside a centered inner safe area to avoid cropping.
 
                 Content to include inside the safe area:
-                - A semi-transparent illustration with a highlighted {$chapter->chapter_title}
+                - A semi-transparent illustration highlighting {$chapter->chapter_title}.
                 - Title at the top: 'The Carbonated Body'
                 - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
                 - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
-                - Provide plenty of breathing space between the content and the blank margins
+                - Provide plenty of breathing space between the content and the edges.
 
                 THUMBNAIL ELEMENT:
                 - In the bottom-left corner, place the EXACT cover image provided in payload as a static thumbnail.
-                - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
+                - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover image.
                 - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
-                - The cover must be used as-is, unchanged, and scaled down only.
+                - Scale down the cover only as needed.
 
                 AFFILIATE FOOTER:
                 - At the very bottom inside the safe area, centered horizontally, 
                 include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
 
                 VISUAL CENTERPIECE: 
-                - Use a 2:3 vertical layout (1024x1536).
+                - Use a 4:5 vertical layout (1080 × 1350 px).
                 Visual style: {$design['image_style']}
                 Mood: {$design['visual_mood']}
                 Audience tone: {$design['human_presence']}
