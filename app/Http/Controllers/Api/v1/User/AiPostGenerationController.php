@@ -204,6 +204,10 @@ class AiPostGenerationController extends ResponseController
     {
         $systemInstruction = $this->getSystemInstruction($chapter);
         $apiKey = Config::get('constant.gemini_keys.key');
+        $response = null;
+        // $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
+        // dd($images);
+        
         try {
             
             $response = Http::withHeaders([
@@ -237,20 +241,34 @@ class AiPostGenerationController extends ResponseController
             );
 
             // 1. Check for API Errors (like 401, 400, 500)
-            if ($response->failed()) {
+            if (!isset($response) ||$response->failed()) {
                 $errorData = $response->json();
                 $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error';
                 return $this->sendError("Gemini API Error: " . $errorMessage);
             }
-            // dd($response->json());
-           $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+            
+            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+           
+            if (!$text) {
+                throw new \Exception('Empty response from Gemini.');
+            }
 
             // Remove any surrounding quotes or whitespace
-            $text = trim($text, "\"\n ");
-
+            // $text = trim($text, "\"\n ");
+            $text = trim($text);
+    
+            // Remove ```json and ``` wrappers
+            $text = preg_replace('/^```json\s*/', '', $text);
+            $text = preg_replace('/^```\s*/', '', $text);
+            $text = preg_replace('/\s*```$/', '', $text);
+            
+            // Remove triple quotes if present
+            $text = trim($text, "\" \n\r\t");
+            
+            
             // Decode JSON
             $data = json_decode($text, true);
-
+            //  
             // Debug log
             \Log::info('Gemini Response:', (array) $data);
 
@@ -258,12 +276,12 @@ class AiPostGenerationController extends ResponseController
                 throw new \Exception('Invalid JSON returned from Gemini: ' . json_last_error_msg());
             }
            
-            if (is_null($data)) {
-                throw new \Exception("Invalid JSON format received from Gemini.");
+            if (is_null($data) || !is_array($data)) {
+                throw new \Exception("Invalid JSON format received from Gemini.Try again");
             }
-            
+            // dd($response->json(),$text,$data,$data['title'],$data['hashtags'],$data['script'],$data['caption']);
             $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
-
+        
             return $this->sendResponse([
                 'caption' => $data['title'] . PHP_EOL . $data['caption'],
                 'hashtags' => $data['hashtags'],
@@ -280,6 +298,8 @@ class AiPostGenerationController extends ResponseController
             ], 'Content generated successfully', 200);
 
         } catch (\Exception $e) {
+            \Log::error('Gemini Exception: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
             return $this->sendError('Error generating content gemini', ['error' => $e->getMessage()], 500);
         }
     }
@@ -452,9 +472,20 @@ class AiPostGenerationController extends ResponseController
 
     public function generateGeminiImage($chapter, $design,$textFormat) 
     {
-        $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
-        $imagepath =  base64_encode(file_get_contents($image_storage_path));
+        // $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+        // $imagepath =  base64_encode(file_get_contents($image_storage_path));
         
+            $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+            $image = imagecreatefrompng($image_storage_path);
+            $resized = imagescale($image, 128, 128); // smaller for Gemini
+            ob_start();
+            imagepng($resized);
+            $imageContents = ob_get_clean();
+            $imagepath = base64_encode($imageContents);
+            imagedestroy($image);
+            imagedestroy($resized);
+        // dd(strlen($imagepath)/1024);
+        // $imagepath = Storage::disk('public')->path('assets/cover-image.png');
         $apiKey = Config::get('constant.gemini_keys.key');
         //    dd($apiKey);
 
@@ -482,9 +513,18 @@ class AiPostGenerationController extends ResponseController
                 Angle: {$design['content_angle']}
 
                 Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
+        
+        // $prompt = "Create a clean 1:1 Instagram medical infographic. 
+        //     Include a centered visual for '{$chapter->chapter_title}'.
+        //     Add the title 'The Carbonated Body' on top and subtitle '{$chapter->chapter}: {$chapter->chapter_title}' below.
+        //     Use visual style: {$design['image_style']}, mood: {$design['visual_mood']}, tone: {$design['human_presence']}.
+        //     Place the cover thumbnail in bottom-left corner as-is, do not alter it.
+        //     Keep content clear with breathing space.";
+
 
             //   dd($imagepath,$prompt); 
                             // - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+        $response = null;
         try{
             // 2. Execute the Request
 
@@ -520,19 +560,37 @@ class AiPostGenerationController extends ResponseController
                         ]
                     ]
                 );
-            
+            // dd($response);
             if ($response->failed()) {
                 // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
-               return $this->sendError("Gemini API Error: ", $response->json());
+                $errorData = $response->json();
+                $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error for image generation';
+                return $this->sendError("Gemini Image API Error: " . $errorMessage);
+              
 
             }
 
             if ($response->successful()) {
-                $data = $response->json();
+                // $data = $response->json();
 
-                // 3. Extract Base64 and save as URL
-                $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
-                $mimeType = $data['candidates'][0]['content']['parts'][0]['inlineData']['mimeType'] ?? 'image/png';
+                // // 3. Extract Base64 and save as URL
+                // $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
+                // $mimeType = $data['candidates'][0]['content']['parts'][0]['inlineData']['mimeType'] ?? 'image/png';
+                
+                $data = json_decode($response->body(), true);
+                if (!$data) {
+                    \Log::error('Invalid JSON from Gemini Image API', [
+                        'body' => $response->body()
+                    ]);
+                    return $this->sendError('Invalid JSON from Gemini', [], 500);
+                }
+
+                $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
+                if (!$base64) {
+                    \Log::error('No image data returned', $data);
+                    return $this->sendError('No image generated', $data, 500);
+                }
+                $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
 
                 // This creates a "URL" that contains the image itself
                 $dataUrl = "data:{$mimeType};base64,{$base64}";
@@ -541,8 +599,8 @@ class AiPostGenerationController extends ResponseController
             // return response()->json(['error' => 'Generation Failed'], 500);
         } catch (\Exception $e) {
             Log::error('Gemini image failed', [
-                'status' => $response->status(),
-                'body' => $response->body(),
+                'status' => $response?->status(),
+                'body' => $response?->body(),
                 'error' => $e->getMessage()
             ]);
             return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
@@ -600,7 +658,7 @@ class AiPostGenerationController extends ResponseController
         -Do NOT invent facts beyond the chapter content provided.
         -Content must be educational only, not medical advice.
         
-        You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations,with the following keys:
+        You MUST respond ONLY in JSON format Do not include any introductory text, no markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values (include # symbol).
         'script': A short script.
