@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
 use OpenAI\Exceptions\ErrorException;
 use CURLFile;
+use Auth;
 
 
 class AiPostGenerationController extends ResponseController
@@ -77,7 +78,7 @@ class AiPostGenerationController extends ResponseController
 
     private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design,$textFormat)
     {
-       
+    //    dd( $affiliate_id = Auth::user()->affiliate_id);
       // AI ko specific format sikhane ke liye prompt
         $systemInstruction = $this->getSystemInstruction($chapter);
         
@@ -205,9 +206,6 @@ class AiPostGenerationController extends ResponseController
         $systemInstruction = $this->getSystemInstruction($chapter);
         $apiKey = Config::get('constant.gemini_keys.key');
         $response = null;
-        // $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
-        // dd($images);
-        
         try {
             
             $response = Http::withHeaders([
@@ -370,7 +368,7 @@ class AiPostGenerationController extends ResponseController
     private function buildSlideImagePrompt($chapter, $design, $slideNumber,$textFormat)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
-        
+        $affiliate_id = Auth::user()->affiliate_id;
         $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
             SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
@@ -390,6 +388,10 @@ class AiPostGenerationController extends ResponseController
             Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
             Preserve the original text, colors, typography, proportions, and layout exactly as provided.
             The cover must be used as-is, unchanged, and scaled down only.
+
+            AFFILIATE FOOTER:
+            - At the very bottom inside the safe area, centered horizontally, 
+            include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
 
             TECHNICAL SPECIFICATIONS:
            - All visible content must be placed strictly inside a centered inner safe area.
@@ -485,7 +487,8 @@ class AiPostGenerationController extends ResponseController
             imagedestroy($image);
             imagedestroy($resized);
         // dd(strlen($imagepath)/1024);
-        // $imagepath = Storage::disk('public')->path('assets/cover-image.png');
+       
+        $affiliate_id = Auth::user()->affiliate_id;
         $apiKey = Config::get('constant.gemini_keys.key');
         //    dd($apiKey);
 
@@ -505,6 +508,10 @@ class AiPostGenerationController extends ResponseController
                 - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover.
                 - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
                 - The cover must be used as-is, unchanged, and scaled down only.
+
+                AFFILIATE FOOTER:
+                - At the very bottom inside the safe area, centered horizontally, 
+                include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
 
                 VISUAL CENTERPIECE: 
                 Visual style: {$design['image_style']}
@@ -585,13 +592,14 @@ class AiPostGenerationController extends ResponseController
                     return $this->sendError('Invalid JSON from Gemini', [], 500);
                 }
 
-                $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
+                // $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
+                $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
                 if (!$base64) {
                     \Log::error('No image data returned', $data);
                     return $this->sendError('No image generated', $data, 500);
                 }
-                $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
-
+                // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
+                $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
                 // This creates a "URL" that contains the image itself
                 $dataUrl = "data:{$mimeType};base64,{$base64}";
                 return $dataUrl;
