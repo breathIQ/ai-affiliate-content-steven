@@ -348,7 +348,7 @@ class AiPostGenerationController extends ResponseController
             "model" => "gpt-image-1",
             "prompt" => $prompt,
             "image" => new CURLFile($imagePath, "image/png"),
-            "size" => "1024x1536"
+            "size" => "1024x1280" //"1024x1536"
         ]);
 
         $response = curl_exec($ch);
@@ -401,7 +401,7 @@ class AiPostGenerationController extends ResponseController
            - Ensure all text is legible and centered within the frame with safe-zone margins.
             
             IMPORTANT LAYOUT RULES:
-            - Use a 2:3 vertical layout (1024x1536).
+            - Use a 4:5 vertical layout (1024x1280).
             - Keep all text within safe margins (at least 12% padding top and bottom).
             - Title must be fully visible at the top.
             - Book cover thumbnail must be fully visible at the bottom-right.
