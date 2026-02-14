@@ -26,6 +26,9 @@ class User extends Authenticatable
         'phone_no',
         'role_id',
         'affiliate_id',
+        'other_affiliate_id',
+        'amazon_link',
+        'affiliate_id_editable',
         'avatar',
         'joined_by',
         'status'

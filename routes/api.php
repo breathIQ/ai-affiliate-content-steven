@@ -108,6 +108,8 @@ Route::group(['prefix' => 'v1/user'], function () {
 
         //*****************Posts************************** */
         Route::apiResource('/posts', PostController::class);
+        Route::post('/posts/{post}/repost', [PostController::class, 'repost']);
+
 
         //*****************Ai Post Generation************************** */
         Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent']);

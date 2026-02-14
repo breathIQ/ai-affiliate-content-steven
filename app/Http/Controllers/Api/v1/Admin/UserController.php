@@ -107,8 +107,8 @@ class UserController extends ResponseController
                 ->when($request->filled('search'), function ($q) use ($request) {
                     $search = $request->search;
                     $q->where(function ($sub) use ($search) {
-                        $sub->where('caption', 'like', "%{$search}%")
-                            ->orWhere('script', 'like', "%{$search}%");
+                        $sub->where('caption', 'like', "%{$search}%");
+                            // ->orWhere('script', 'like', "%{$search}%")
                     });
                 })
                 ->orderBy('created_at', 'desc');
@@ -124,7 +124,7 @@ class UserController extends ResponseController
                     'id' => $post->id,
                     'media' => $mediaUrl,
                     'media_type' => $media->media_type ?? null,
-                    'post_content' => Str::limit($post->caption ?? $post->script, 80),
+                    'post_content' => Str::limit($post->caption ?? '', 80),
                     'chapter_name' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                     'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,
@@ -186,7 +186,7 @@ class UserController extends ResponseController
                 'media_assets' => $post->media_assets,
                 'media' => $formattedMedia,
                 'caption' => $post->caption,
-                'script' => $post->script,
+                // 'script' => $post->script,
                 //'chapter_title' => $post->chapter->chapter_title ?? 'N/A',
                 //'chapter' => $post->chapter->chapter ?? '',
                 'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,

@@ -283,7 +283,10 @@ class UserAuthController extends ResponseController
                 'email' => $user->email,
                 'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
                 'affiliate_id' => $user->affiliate_id ?? '', // Assuming this exists or is username
-                'affiliate_link' => 'https://www.co2book.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
+                'affiliate_link' => 'https://co2body.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
+                'other_affiliate_id' => $user->other_affiliate_id,
+                'amazon_link' => $user->amazon_link,
+                'affiliate_id_editable' => $user->affiliate_id_editable,
                 'social_accounts' => [
                     'instagram' => [
                         'connected' => (bool)$instagram,
@@ -309,6 +312,27 @@ class UserAuthController extends ResponseController
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
                 'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+
+                'affiliate_id' => 'nullable|string|max:60|unique:users,affiliate_id,' . $user->id,
+                'other_affiliate_id'  => 'nullable|digits_between:1,10',
+
+                
+                // amazon field 
+                'amazon_link' => [
+                    'required',
+                    'url',
+                    function ($attribute, $value, $fail) {
+                        $url = parse_url($value);
+
+                        if (
+                            !isset($url['scheme']) || $url['scheme'] !== 'https' ||
+                            !isset($url['host']) ||
+                            !preg_match('/(^|\.)amazon\.com$/', $url['host'])
+                        ) {
+                            $fail('The link must be a valid HTTPS Amazon.com URL.');
+                        }
+                    }
+                ],
             ]);
 
             if ($validator->fails()) {
@@ -349,10 +373,21 @@ class UserAuthController extends ResponseController
                 $avatarPath =  $path;
             }
 
-            $user->update([
-                'name' => $request->name,
-                'avatar' => $avatarPath,
-            ]);
+            $data['name'] = $request->name;
+            $data['avatar'] = $avatarPath;
+            $data['amazon_link'] = $request->amazon_link;
+
+            if ($user->other_affiliate_id == null && $request->filled('other_affiliate_id')) {
+                $data['other_affiliate_id'] = $request->other_affiliate_id;
+            }
+
+            if ($user->affiliate_id_editable == 1 && $request->filled('affiliate_id')) {
+                $data['affiliate_id'] = $request->affiliate_id;
+                $data['affiliate_id_editable'] = 0; // lock it
+            }
+
+
+            $user->update($data);
 
             return $this->sendResponse([], 'Profile updated successfully', 200);
 

@@ -360,18 +360,17 @@ class PublishPostToSocialMedia implements ShouldQueue
     {
         // Combines Script + Caption + Hashtags with line breaks
         $parts = array_filter([
-            $this->post->script,   // The main content/story
-            $this->post->caption,  // Short catchy description
-            $this->post->hastag    // The hashtags (stored as 'hastag' in your DB)
+            $this->post->caption . "\n🔗 Copy The Link: " . url('/'.$this->post->user->affiliate_id),  // Short catchy caption
+            $this->post->hastag    // The hashtags 
         ]);
 
        $captionText = implode("\n\n", $parts);
-       Log::info('affiliate link: ' . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform));
+       Log::info('affiliate link: ' . url('/'.$this->post->user->affiliate_id));
        
-        // If an affiliate URL exists, append it at the bottom
-        if ($this->post->affiliate_url) {
-            $captionText .= "\n\n🔗 Copy The Link: " . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
-        }
+        // // If an affiliate URL exists, append it at the bottom
+        // if ($this->post->affiliate_url) {
+        //     $captionText .= "\n\n🔗 Copy The Link: " . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
+        // }
         Log::info("Caption Text: " . $captionText);
         return $captionText;
     }

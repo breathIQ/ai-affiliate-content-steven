@@ -33,8 +33,8 @@ class PostController extends ResponseController
                 ->with(['chapter', 'media'])
                 ->when($search, function ($q) use ($search) {
                     $q->where(function ($sub) use ($search) {
-                        $sub->where('caption', 'like', "%{$search}%")
-                            ->orWhere('script', 'like', "%{$search}%");
+                        $sub->where('caption', 'like', "%{$search}%");
+                            // ->orWhere('script', 'like', "%{$search}%")
                     });
                 })
                 ->orderBy('created_at', 'desc');
@@ -61,7 +61,7 @@ class PostController extends ResponseController
                     'id' => $post->id,
                     'media' => $mediaUrl,
                     'media_type' => $media_type,
-                    'post_content' => Str::limit($post->caption ?? $post->script, 80),
+                    'post_content' => Str::limit($post->caption ?? '', 80),
                     'chapter_name' => $post->chapter_title.'...' ?? 'N/A',
                     'chapter_code' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'), // e.g. Ch-12
                     'hashtags_count' => $hashtagsCount,
@@ -131,7 +131,7 @@ class PostController extends ResponseController
                     'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $post->chapter_name ?? 'N/A'),
                 ],
                 'caption' => $post->caption,
-                'script' => $post->script,
+                // 'script' => $post->script,
                 'hashtags' => $post->hastag,
                 'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,
                 'ai_model' => $post->ai_model,
@@ -199,7 +199,7 @@ class PostController extends ResponseController
                 'user_id'      => $user->id,
                 'chapter_id'   => $request->chapter_id,
                 'caption'      => $request->caption,
-                'script'       => $request->script,
+                // 'script'       => $request->script,
                 'media_assets'    => $request->media_assets,
                 'status'       => 'processing',
                 'ai_model'     => $request->ai_model,
@@ -207,7 +207,7 @@ class PostController extends ResponseController
                 // 'published_at'=> $request->status === 'published' ? now() : null,
                  'published_at'=> null,
                 'hastag' => $request->hashtags,
-                'affiliate_url' => $request->affiliate_url,
+                'affiliate_url' => $user->amazon_link,
                 'chapter_name' => $chapterName->chapter,
                 'chapter_title' => $chapterName->chapter_title,
             ]);
@@ -365,6 +365,34 @@ class PostController extends ResponseController
             
         });
     }
+
+    public function repost(Post $post)
+    {
+        try {
+
+            $user = Auth::user();
+
+            // Security check (important)
+            if ($post->user_id !== $user->id) {
+                return $this->sendError('Unauthorized', [], 403);
+            }
+
+            // Reset post status
+            $post->update([
+                'status' => 'processing',
+                'published_at' => null,
+            ]);
+
+            // Dispatch job again
+            PublishPostToSocialMedia::dispatch($post);
+
+            return $this->sendResponse([], 'Post reposted in processing', 200);
+
+        } catch (\Exception $e) {
+            return $this->sendError('Something went wrong', [], 500);
+        }
+    }
+
 
 
     public function publishToTikTok(Post $post, SocialTokenService $tokenService)

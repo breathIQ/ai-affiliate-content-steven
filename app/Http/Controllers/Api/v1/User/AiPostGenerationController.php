@@ -112,7 +112,7 @@ class AiPostGenerationController extends ResponseController
             return $this->sendResponse([
                 'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'],
-                'script' => $structuredData['script'],
+                // 'script' => $structuredData['script'],
                 'title' => $structuredData['title'],
                 'model' => 'ChatGPT', //$model,
                 'post_type' => $postType,
@@ -184,7 +184,7 @@ class AiPostGenerationController extends ResponseController
             return $this->sendResponse([
                 'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'] ?? '',
-                'script' => $structuredData['script'] ?? '',
+                // 'script' => $structuredData['script'] ?? '',
                 'title' => $structuredData['title'] ?? '',
                 'model' => 'Claude', //$model,  
                 'post_type' => $postType,
@@ -283,7 +283,7 @@ class AiPostGenerationController extends ResponseController
             return $this->sendResponse([
                 'caption' => $data['title'] . PHP_EOL . $data['caption'],
                 'hashtags' => $data['hashtags'],
-                'script' => $data['script'],
+                // 'script' => $data['script'],
                 'title' => $data['title'],
                 'model' => 'Gemini', //$model,  
                 'post_type' => $postType,
@@ -686,9 +686,10 @@ class AiPostGenerationController extends ResponseController
         You MUST respond ONLY in JSON format Do not include any introductory text, no markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values (include # symbol).
-        'script': A short script.
+        
         'title': A scroll-stopping headline.";
-
+        
+        // 'script': A short script.
         return $systemInstruction;
     }
 
