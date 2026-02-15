@@ -348,7 +348,7 @@ class AiPostGenerationController extends ResponseController
             "model" => "gpt-image-1",
             "prompt" => $prompt,
             "image" => new CURLFile($imagePath, "image/png"),
-            "size" => "1024x1280" //"1024x1536"
+            "size" => "1024x1536" //"1024x1280"
         ]);
 
         $response = curl_exec($ch);
