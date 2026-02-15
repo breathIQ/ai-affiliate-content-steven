@@ -67,7 +67,7 @@ class StorePostRequest extends FormRequest
             'platforms' => 'required|array',
             'platforms.*' => 'in:instagram,tiktok',
 
-            'affiliate_url' => 'required|string',
+            'affiliate_url' => 'nullable|string',
         ];
     }
 

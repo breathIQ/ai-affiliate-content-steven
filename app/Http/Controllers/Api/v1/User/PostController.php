@@ -207,7 +207,7 @@ class PostController extends ResponseController
                 // 'published_at'=> $request->status === 'published' ? now() : null,
                  'published_at'=> null,
                 'hastag' => $request->hashtags,
-                'affiliate_url' => $request->affiliate_url,
+                'affiliate_url' => $request->affiliate_url ?? null,
                 'chapter_name' => $chapterName->chapter,
                 'chapter_title' => $chapterName->chapter_title,
             ]);
