@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api\v1\User;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\v1\ResponseController;
-use App\Models\{Post,AffiliateClick,PostPlatform};
+use App\Models\{Post,AffiliateClick,PostPlatform,TotalClickByUser,AffiliateClickByUser,User};
 use Illuminate\Support\Facades\DB;
-
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -121,5 +121,52 @@ class AffiliateClickController extends ResponseController
         $url = asset('storage/'.$path);
         return $this->sendResponse($url, 'File saved successfully', 200);
     }
+
+    public function affiliateClicks(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'affiliate_id' => 'required|string',
+            'ip_address'  => 'required|ip',
+            'platform'     => 'nullable|string',
+            'device'       => 'nullable|string',
+            'user_agent'   => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendValidationError($validator->errors()->first());
+        }
+
+        $user = User::where('affiliate_id', $request->affiliate_id)->firstOrFail();
+
+        $existingClick = AffiliateClickByUser::where('user_id', $user->id)
+            ->where('ip_address', $request->ip_address)
+            ->where('created_at', '>', now()->subHours(24))
+            ->exists();
+
+        if (!$existingClick) {
+            DB::transaction(function () use ($user, $request) {
+
+                AffiliateClickByUser::create([
+                    'user_id'    => $user->id,
+                    'referrer'   => $request->affiliate_id,
+                    'platform'   => $request->platform,
+                    'device'     => $request->device,
+                    'ip_address' => $request->ip_address,
+                    'user_agent' => $request->user_agent,
+                ]);
+
+                TotalClickByUser::updateOrCreate(
+                    ['user_id' => $user->id],
+                    []
+                )->increment('total_clicks');
+                
+            }, 5); // retry 5 times automatically if deadlock happens
+        }
+
+        $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?redirect=".$user->amazon_link;
+
+        return redirect()->away($redirecturl);
+    }
+
 
 }

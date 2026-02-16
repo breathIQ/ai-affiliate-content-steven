@@ -333,6 +333,8 @@ class UserAuthController extends ResponseController
                         }
                     }
                 ],
+            ],[
+                'affiliate_id.unique' => 'The affiliate Url is already in use.',
             ]);
 
             if ($validator->fails()) {

@@ -42,6 +42,8 @@ Route::group(['prefix' => 'v1'], function () {
     //******************* */
     Route::post('gemini-image-generate',[AiPostGenerationController::class,'generateSlide']);
     Route::post('remove-gemini-watermark',[AiPostGenerationController::class,'removeGeminiWatermark']);
+
+    Route::post('affiliate-clicks',[AffiliateClickController::class,'affiliateClicks']);
 });
 
 //****************************Admin Route **************************************** */
