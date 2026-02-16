@@ -127,7 +127,7 @@ class AffiliateClickController extends ResponseController
         $user = User::where('affiliate_id', $affiliate_id)->firstOrFail();
 
         if(!$user){
-            return $this->sendError('Invalid affiliate id');
+            return $this->sendError('Invalid affiliate url');
         }
         // 1. Detect Platform from URL parameter OR Referrer header
         $platform = $request->query('ref') ?? $this->parseReferrer($request->header('referer'));
