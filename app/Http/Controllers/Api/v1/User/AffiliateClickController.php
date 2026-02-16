@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Exception;
+
 
 class AffiliateClickController extends ResponseController
 {
@@ -124,47 +126,58 @@ class AffiliateClickController extends ResponseController
 
     public function affiliateClicks(Request $request,$affiliate_id)
     {
-        $user = User::where('affiliate_id', $affiliate_id)->firstOrFail();
+        try{
 
-        if(!$user){
-            return $this->sendError('Invalid affiliate url');
+            
+            $user = User::where('affiliate_id', $affiliate_id)->firstOrFail();
+
+            if(!$user){
+                return $this->sendError('Invalid affiliate url');
+            }
+            // 1. Detect Platform from URL parameter OR Referrer header
+            $platform = $request->query('ref') ?? $this->parseReferrer($request->header('referer'));
+        
+            // 2. Determine Device Type from User Agent
+            $device = $this->getDevice($request->userAgent());
+            $ip_address = $request->ip();
+            $user_agent = $request->userAgent();
+            $existingClick = AffiliateClickByUser::where('user_id', $user->id)
+                ->where('ip_address', $ip_address)
+                ->where('created_at', '>', now()->subHours(24))
+                ->exists();
+
+            if (!$existingClick) {
+                DB::transaction(function () use ($user, $affiliate_id, $platform, $device, $ip_address, $user_agent) {
+
+                    AffiliateClickByUser::create([
+                        'user_id'    => $user->id,
+                        'referrer'   => $affiliate_id,
+                        'platform'   => $platform,
+                        'device'     => $device,
+                        'ip_address' => $ip_address,
+                        'user_agent' => $user_agent,
+                    ]);
+
+                    TotalClickByUser::updateOrCreate(
+                        ['user_id' => $user->id],
+                        []
+                    )->increment('total_clicks');
+                    
+                }, 5); // retry 5 times automatically if deadlock happens
+            }
+
+            $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?redirect=".$user->amazon_link;
+
+            // return redirect()->away($redirecturl);
+            return $this->sendResponse($redirecturl, 'Redirect URL generated successfully', 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            
+            return $this->sendError('Invalid affiliate url.', [], 404);
+
+        } catch (\Exception $e) {
+            // Catch any other exceptions
+            return $this->sendError('An error occurred: ' . $e->getMessage(), [], 500);
         }
-        // 1. Detect Platform from URL parameter OR Referrer header
-        $platform = $request->query('ref') ?? $this->parseReferrer($request->header('referer'));
-       
-        // 2. Determine Device Type from User Agent
-        $device = $this->getDevice($request->userAgent());
-        $ip_address = $request->ip();
-        $user_agent = $request->userAgent();
-        $existingClick = AffiliateClickByUser::where('user_id', $user->id)
-            ->where('ip_address', $ip_address)
-            ->where('created_at', '>', now()->subHours(24))
-            ->exists();
-
-        if (!$existingClick) {
-            DB::transaction(function () use ($user, $affiliate_id, $platform, $device, $ip_address, $user_agent) {
-
-                AffiliateClickByUser::create([
-                    'user_id'    => $user->id,
-                    'referrer'   => $affiliate_id,
-                    'platform'   => $platform,
-                    'device'     => $device,
-                    'ip_address' => $ip_address,
-                    'user_agent' => $user_agent,
-                ]);
-
-                TotalClickByUser::updateOrCreate(
-                    ['user_id' => $user->id],
-                    []
-                )->increment('total_clicks');
-                
-            }, 5); // retry 5 times automatically if deadlock happens
-        }
-
-        $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?redirect=".$user->amazon_link;
-
-        // return redirect()->away($redirecturl);
-        return $this->sendResponse($redirecturl, 'Redirect URL generated successfully', 200);
     }
 
 
