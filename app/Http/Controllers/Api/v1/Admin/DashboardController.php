@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Models\{User,Post,Chapter,AffiliateClick};
+use App\Models\{User,Post,Chapter,AffiliateClick,TotalClickByUser,AffiliateClickByUser};
 use Carbon\Carbon;
 
 class DashboardController extends ResponseController
@@ -92,14 +92,22 @@ class DashboardController extends ResponseController
     }
 
     protected function affiliateClicks($start, $end)
-    {   
-        $totalClicks = AffiliateClick::whereBetween('created_at', [$start, $end])->count();
-        
+    {  
         // Graph data: Daily affiliate clicks in the current month
         $startOfMonth = Carbon::parse($start);
         $todayDay = Carbon::now()->day; // Loop until today
+
+        //by post tracking
+        // $totalClicks = AffiliateClick::whereBetween('created_at', [$start, $end])->count();
         
-        $dailyCounts = AffiliateClick::whereBetween('created_at', [$start, $end])
+        // $dailyCounts = AffiliateClick::whereBetween('created_at', [$start, $end])
+        //     ->select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as count'))
+        //     ->groupBy('date')
+        //     ->pluck('count', 'date');
+
+        //by user tracking
+        $totalClicks = AffiliateClickByUser::whereBetween('created_at', [$start, $end])->count();
+        $dailyCounts = AffiliateClickByUser::whereBetween('created_at', [$start, $end])
             ->select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as count'))
             ->groupBy('date')
             ->pluck('count', 'date');
@@ -150,10 +158,21 @@ class DashboardController extends ResponseController
 
         
         //top clicks
+        // $topClicks = User::where('role_id', 2)
+        // ->withCount([
+        //     'affiliateClicks as total' => function ($q) use ($start, $end) {
+        //         $q->whereBetween('affiliate_clicks.created_at', [$start, $end]);
+        //     }
+        // ])
+        // ->having('total', '>', 0)
+        // ->orderByDesc('total')
+        // ->limit(5)
+        // ->get(['id', 'name', 'email', 'avatar']);
+
         $topClicks = User::where('role_id', 2)
         ->withCount([
-            'affiliateClicks as total' => function ($q) use ($start, $end) {
-                $q->whereBetween('affiliate_clicks.created_at', [$start, $end]);
+            'affiliateClicksByUser as total' => function ($q) use ($start, $end) {
+                $q->whereBetween('affiliate_click_by_users.created_at', [$start, $end]);
             }
         ])
         ->having('total', '>', 0)

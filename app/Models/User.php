@@ -92,5 +92,15 @@ class User extends Authenticatable
         );
     }
 
+    public function affiliateClicksByUser()
+    {
+        return $this->hasMany(AffiliateClickByUser::class);
+    }
+    
+    public function totalClicksByUser()
+    {
+        return $this->hasOne(TotalClickByUser::class, 'user_id');
+    }
+
 
 }

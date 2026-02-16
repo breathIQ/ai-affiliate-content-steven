@@ -27,8 +27,10 @@ class UserController extends ResponseController
                 'posts as published_posts_count' => function ($q) {
                     $q->where('status', 'published');
                 }, 
-                'affiliateClicks'
+                // 'affiliateClicks'
+                
             ])
+           ->withSum('totalClicksByUser', 'total_clicks')
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->search;
                 $q->where(function ($sub) use ($search) {
@@ -42,6 +44,7 @@ class UserController extends ResponseController
         // Pagination
         $perPage = $request->get('per_page', 10);
         $users = $query->paginate($perPage);
+        
 
         // Transform collection to match UI requirements
         $users->getCollection()->transform(function ($user) {
@@ -53,7 +56,7 @@ class UserController extends ResponseController
                 'affiliate_id' => $user->affiliate_id,
                 'posts_generated' => $user->posts_count,
                 'posts_published' => $user->published_posts_count,
-                'total_clicks' => $user->affiliate_clicks_count,
+                'total_clicks' => (int)$user->total_clicks_by_user_sum_total_clicks ?? 0,
                 'created_at' => $user->created_at->format('Y-m-d H:i:s'),
                 'status' => $user->status,
             ];

@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Api\v1\ResponseController;
 use Illuminate\Support\Facades\Auth;
-use App\Models\{Chapter,AffiliateClick,Post,Media,File,BookChapter};
+use App\Models\{Chapter,AffiliateClick,Post,Media,File,BookChapter,AffiliateClickByUser,TotalClickByUser};
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;  
 use Illuminate\Support\Facades\Storage;
@@ -28,19 +28,35 @@ class UserDashboardController extends ResponseController
             $postsGenerated = $user->posts()->count();
             //$draftPosts = $user->posts()->where('status', 'draft')->count(); // Assuming status column
             //$scheduledPosts = $user->posts()->where('status', 'scheduled')->count();
-            $affiliateClicks = $user->posts()->sum('total_clicks');
+            // $affiliateClicks = $user->posts()->sum('total_clicks');
 
-            // This Month Stats
-            $monthlyClicks = $user->posts()
-                ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
-                ->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])
-                ->count();
+            // // This Month Stats
+            // $monthlyClicks = $user->posts()
+            //     ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
+            //     ->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])
+            //     ->count();
 
-            // Get Last Month Clicks
-            $lastMonthClicks = $user->posts()
-                ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
-                ->whereBetween('affiliate_clicks.created_at', [$lastMonthStart, $lastMonthEnd])
-                ->count();
+            // // Get Last Month Clicks
+            // $lastMonthClicks = $user->posts()
+            //     ->join('affiliate_clicks', 'posts.id', '=', 'affiliate_clicks.post_id')
+            //     ->whereBetween('affiliate_clicks.created_at', [$lastMonthStart, $lastMonthEnd])
+            //     ->count();
+
+
+           $clicks = AffiliateClickByUser::where('user_id', $user->id)
+                ->selectRaw("
+                    COUNT(*) as total,
+                    SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as monthly,
+                    SUM(CASE WHEN created_at BETWEEN ? AND ? THEN 1 ELSE 0 END) as last_month
+                ", [
+                    $currentMonthStart, $currentMonthEnd,
+                    $lastMonthStart, $lastMonthEnd
+                ])
+            ->first();
+
+            $affiliateClicks = $clicks->total;
+            $monthlyClicks = $clicks->monthly;
+            $lastMonthClicks = $clicks->last_month;
 
             // 3. Calculate Growth Rate
             $growthRate = 0;
@@ -64,11 +80,18 @@ class UserDashboardController extends ResponseController
 
             // Chart Data (Affiliate Clicks visual) - Let's give last 30 days or daily breakdown for current month
             // Simple daily count for current month
-            $clicksGraph = AffiliateClick::join('posts', 'posts.id', '=', 'affiliate_clicks.post_id')
-                ->where('posts.user_id', $user->id)
-                ->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])
-                ->selectRaw('DATE(affiliate_clicks.created_at) as date, COUNT(*) as count')
+            // $clicksGraph = AffiliateClick::join('posts', 'posts.id', '=', 'affiliate_clicks.post_id')
+            //     ->where('posts.user_id', $user->id)
+            //     ->whereBetween('affiliate_clicks.created_at', [$currentMonthStart, $currentMonthEnd])
+            //     ->selectRaw('DATE(affiliate_clicks.created_at) as date, COUNT(*) as count')
+            //     ->groupBy('date')
+            //     ->get();
+
+            $clicksGraph = AffiliateClickByUser::where('user_id', $user->id)
+                ->whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])
+                ->selectRaw('DATE(created_at) as date, COUNT(*) as count')
                 ->groupBy('date')
+                ->orderBy('date', 'asc')
                 ->get();
 
             // Recent Posts
