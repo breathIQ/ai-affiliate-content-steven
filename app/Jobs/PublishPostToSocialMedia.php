@@ -53,7 +53,7 @@ class PublishPostToSocialMedia implements ShouldQueue
                     $this->publishToInstagram($account);
                 } elseif ($platformRecord->platform === 'tiktok') {
                     Log::info("Publishing to TikTok for Post {$this->post->id}");
-                    $this->publishToTikTok($account);
+                    //$this->publishToTikTok($account);
                 }
 
                 $platformRecord->update(['status' => 'published','published_at' => now()]);
