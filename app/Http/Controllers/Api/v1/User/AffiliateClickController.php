@@ -122,37 +122,32 @@ class AffiliateClickController extends ResponseController
         return $this->sendResponse($url, 'File saved successfully', 200);
     }
 
-    public function affiliateClicks(Request $request)
+    public function affiliateClicks(Request $request,$affiliate_id)
     {
-        $validator = Validator::make($request->all(), [
-            'affiliate_id' => 'required|string',
-            'ip_address'  => 'required|ip',
-            'platform'     => 'nullable|string',
-            'device'       => 'nullable|string',
-            'user_agent'   => 'nullable|string',
-        ]);
+        $user = User::where('affiliate_id', $affiliate_id)->firstOrFail();
 
-        if ($validator->fails()) {
-            return $this->sendValidationError($validator->errors()->first());
-        }
-
-        $user = User::where('affiliate_id', $request->affiliate_id)->firstOrFail();
-
+        // 1. Detect Platform from URL parameter OR Referrer header
+        $platform = $request->query('ref') ?? $this->parseReferrer($request->header('referer'));
+       
+        // 2. Determine Device Type from User Agent
+        $device = $this->getDevice($request->userAgent());
+        $ip_address = $request->ip();
+        $user_agent = $request->userAgent();
         $existingClick = AffiliateClickByUser::where('user_id', $user->id)
-            ->where('ip_address', $request->ip_address)
+            ->where('ip_address', $ip_address)
             ->where('created_at', '>', now()->subHours(24))
             ->exists();
 
         if (!$existingClick) {
-            DB::transaction(function () use ($user, $request) {
+            DB::transaction(function () use ($user, $affiliate_id, $platform, $device, $ip_address, $user_agent) {
 
                 AffiliateClickByUser::create([
                     'user_id'    => $user->id,
-                    'referrer'   => $request->affiliate_id,
-                    'platform'   => $request->platform,
-                    'device'     => $request->device,
-                    'ip_address' => $request->ip_address,
-                    'user_agent' => $request->user_agent,
+                    'referrer'   => $affiliate_id,
+                    'platform'   => $platform,
+                    'device'     => $device,
+                    'ip_address' => $ip_address,
+                    'user_agent' => $user_agent,
                 ]);
 
                 TotalClickByUser::updateOrCreate(
@@ -165,7 +160,8 @@ class AffiliateClickController extends ResponseController
 
         $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?redirect=".$user->amazon_link;
 
-        return redirect()->away($redirecturl);
+        // return redirect()->away($redirecturl);
+        return $this->sendResponse($redirecturl, 'Redirect URL generated successfully', 200);
     }
 
 
