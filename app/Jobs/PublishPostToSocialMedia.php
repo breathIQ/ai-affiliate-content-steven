@@ -36,7 +36,7 @@ class PublishPostToSocialMedia implements ShouldQueue
     public function handle(): void
     {
         
-        $platforms = $this->post->platforms()->where('status', 'processing')->get();   // need to change this to pending
+        $platforms = $this->post->platforms()->whereIn('status', ['processing','failed'])->get();  
         $user = $this->post->user;
         $hasFailure = false;
         

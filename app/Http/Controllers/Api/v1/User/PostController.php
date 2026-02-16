@@ -384,6 +384,7 @@ class PostController extends ResponseController
             ]);
 
             // Dispatch job again
+            \Log::info('Post reposted in processing', $post->toArray());
             PublishPostToSocialMedia::dispatch($post);
 
             return $this->sendResponse([], 'Post reposted in processing', 200);
