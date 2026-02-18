@@ -357,7 +357,7 @@ class AiPostGenerationController extends ResponseController
             if ($response === false) {
                 return [
                     'success' => false,
-                    'image_url' => curl_error($ch) ?: 'Curl request failed',
+                    'image_url' => '',
                     'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                 ];
             }
@@ -374,7 +374,7 @@ class AiPostGenerationController extends ResponseController
 
                 return [
                     'success' => false,
-                    'image_url' => $errorMessage,
+                    'image_url' => '',
                     'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                 ];
             }
@@ -382,7 +382,7 @@ class AiPostGenerationController extends ResponseController
             if (!$base64) {
                 return [
                     'success' => false,
-                    'image_url' => 'b64 image failed',
+                    'image_url' => '',
                     'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                 ];
             }
@@ -397,7 +397,7 @@ class AiPostGenerationController extends ResponseController
 
             return [
                 'success' => false,
-                'image_url' => 'OpenAI image generation error: ' . $e->getMessage(),
+                'image_url' => '',
                 'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
             ];
         }
@@ -659,7 +659,7 @@ class AiPostGenerationController extends ResponseController
                 // return $this->sendError("Gemini Image API Error: " . $errorMessage);
                 return [
                     'success' => false,
-                    'image_url' =>$errorMessage,
+                    'image_url' =>'',
                     'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                 ];
               
@@ -679,7 +679,7 @@ class AiPostGenerationController extends ResponseController
                     // return $this->sendError('Invalid JSON from Gemini', [], 500);
                     return [
                         'success' => false,
-                        'image_url' => 'Invalid JSON from Gemini',
+                        'image_url' => '',
                         'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                     ];
                 }
@@ -691,7 +691,7 @@ class AiPostGenerationController extends ResponseController
                     // return $this->sendError('No image generated', $data, 500);
                     return [
                         'success' => false,
-                        'image_url' => 'No image generated',
+                        'image_url' => '',
                         'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                     ];
                 }
@@ -716,7 +716,7 @@ class AiPostGenerationController extends ResponseController
             // return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
             return [
                 'success' => false,
-                'image_url' => $e->getMessage(),
+                'image_url' => '',
                 'error' => 'Currently this model server is down. Try another AI model or upload manually.'
             ];
         }
