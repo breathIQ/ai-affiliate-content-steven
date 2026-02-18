@@ -466,6 +466,7 @@ class AiPostGenerationController extends ResponseController
                         'image_url' => $result['image_url'],
                         'image_error' => $result['success'] ? null : $result['error'],
                         'status' => $result['success'],
+                        'model_used' =>$result['model_used'],
                     ];
 
                     sleep(3); 
@@ -507,6 +508,7 @@ class AiPostGenerationController extends ResponseController
                     'image_url' => $result['image_url'],
                     'image_error' => $result['success'] ? null : $result['error'],
                     'status' => $result['success'],
+                    'model_used' =>$result['model_used'],
                 ];
             }else{
                 $imagePrompt = $this->buildSlideImagePrompt(
@@ -740,7 +742,8 @@ class AiPostGenerationController extends ResponseController
                 return [
                     'success' => false,
                     'image_url' => '',
-                    'error' => 'Currently this model server is down. Try another AI model or upload manually.'
+                    'error' => 'Currently this model server is down. Try another AI model or upload manually.',
+                    'model_used' => null
                 ];
             }
         }
