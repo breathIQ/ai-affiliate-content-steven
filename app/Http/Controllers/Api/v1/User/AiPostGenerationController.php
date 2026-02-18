@@ -421,9 +421,12 @@ class AiPostGenerationController extends ResponseController
             for ($i = 0; $i < $slidesCount; $i++) {
 
                 if($model === 'gemini'){
+                    $result = $this->generateGeminiImage($chapter, $design,$textFormat);
                     $images[] = [
                         'slide' => $i + 1,
-                        'image_url' => $this->generateGeminiImage($chapter, $design,$textFormat),
+                        'image_url' => $result['image_url'],
+                        'image_error' => $result['success'] ? null : $result['error'],
+                        'status' => $result['success'],
                     ];
 
                     sleep(3); 
@@ -438,6 +441,8 @@ class AiPostGenerationController extends ResponseController
                     $images[] = [
                         'slide' => $i + 1,
                         'image_url' => $this->generateAIImage($imagePrompt),
+                        'image_error' => null,
+                        'status' => true,
                     ];
 
                     sleep(3); // REQUIRED (2–5 seconds)
@@ -448,9 +453,12 @@ class AiPostGenerationController extends ResponseController
         } else {
             // Single post
             if($model === 'gemini'){
+                $result = $this->generateGeminiImage($chapter, $design,$textFormat);
                 $images[] = [
                     'slide' => 1,
-                    'image_url' => $this->generateGeminiImage($chapter, $design,$textFormat),
+                    'image_url' => $result['image_url'],
+                    'image_error' => $result['success'] ? null : $result['error'],
+                    'status' => $result['success'],
                 ];
             }else{
                 $imagePrompt = $this->buildSlideImagePrompt(
@@ -463,6 +471,8 @@ class AiPostGenerationController extends ResponseController
                 $images[] = [
                     'slide' => 1,
                     'image_url' => $this->generateAIImage($imagePrompt),
+                    'image_error' => null,
+                    'status' => true,
                 ];  
             }
         }
@@ -551,7 +561,7 @@ class AiPostGenerationController extends ResponseController
         $response = null;
         try{
             // 2. Execute the Request
-
+                    //model : gemini-2.5-flash-image
            $response = Http::timeout(90)
                 ->retry(2, 2000, function ($exception) {
                     return $exception instanceof \Illuminate\Http\Client\ConnectionException;
@@ -589,7 +599,12 @@ class AiPostGenerationController extends ResponseController
                 // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
                 $errorData = $response->json();
                 $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error for image generation';
-                return $this->sendError("Gemini Image API Error: " . $errorMessage);
+                // return $this->sendError("Gemini Image API Error: " . $errorMessage);
+                return [
+                    'success' => false,
+                    'image_url' =>$errorMessage,
+                    'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                ];
               
 
             }
@@ -598,28 +613,41 @@ class AiPostGenerationController extends ResponseController
                 // $data = $response->json();
 
                 // // 3. Extract Base64 and save as URL
-                // $base64 = $data['candidates'][0]['content']['parts'][0]['inlineData']['data'];
-                // $mimeType = $data['candidates'][0]['content']['parts'][0]['inlineData']['mimeType'] ?? 'image/png';
                 
                 $data = json_decode($response->body(), true);
                 if (!$data) {
                     \Log::error('Invalid JSON from Gemini Image API', [
                         'body' => $response->body()
                     ]);
-                    return $this->sendError('Invalid JSON from Gemini', [], 500);
+                    // return $this->sendError('Invalid JSON from Gemini', [], 500);
+                    return [
+                        'success' => false,
+                        'image_url' => 'Invalid JSON from Gemini',
+                        'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                    ];
                 }
 
                 // $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
                 $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
                 if (!$base64) {
                     \Log::error('No image data returned', $data);
-                    return $this->sendError('No image generated', $data, 500);
+                    // return $this->sendError('No image generated', $data, 500);
+                    return [
+                        'success' => false,
+                        'image_url' => 'No image generated',
+                        'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                    ];
                 }
                 // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
                 $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
                 // This creates a "URL" that contains the image itself
                 $dataUrl = "data:{$mimeType};base64,{$base64}";
-                return $dataUrl;
+                // return $dataUrl;
+                return [
+                    'success' => true,
+                    'image_url' => $dataUrl,
+                    'error' => null
+                ];
             }
             // return response()->json(['error' => 'Generation Failed'], 500);
         } catch (\Exception $e) {
@@ -628,7 +656,12 @@ class AiPostGenerationController extends ResponseController
                 'body' => $response?->body(),
                 'error' => $e->getMessage()
             ]);
-            return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
+            // return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
+            return [
+                'success' => false,
+                'image_url' => $e->getMessage(),
+                'error' => 'Currently this model server is down. Try another AI model or upload manually.'
+            ];
         }
 
         
