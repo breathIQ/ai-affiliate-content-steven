@@ -335,33 +335,72 @@ class AiPostGenerationController extends ResponseController
     {
         $apiKey = Config::get('constant.open_ai_keys.key');
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
-        
-        $ch = curl_init("https://api.openai.com/v1/images/edits");
+        try{
 
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer {$apiKey}"
-        ]);
+            $ch = curl_init("https://api.openai.com/v1/images/edits");
 
-        curl_setopt($ch, CURLOPT_POSTFIELDS, [
-            "model" => "gpt-image-1",
-            "prompt" => $prompt,
-            "image" => new CURLFile($imagePath, "image/png"),
-            "size" => "1024x1536" //"1024x1280"
-        ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "Authorization: Bearer {$apiKey}"
+            ]);
 
-        $response = curl_exec($ch);
-        curl_close($ch);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, [
+                "model" => "gpt-image-1",
+                "prompt" => $prompt,
+                "image" => new CURLFile($imagePath, "image/png"),
+                "size" => "1024x1536" //"1024x1280"
+            ]);
 
-        // cleanup
-        $result = json_decode($response, true);
-        // dd($result);
-        $base64 = $result['data'][0]['b64_json'];
-        // Create data URL
-        $imageUrl = 'data:image/png;base64,' . $base64;
-        
-        return $imageUrl;
+            $response = curl_exec($ch);
+            if ($response === false) {
+                return [
+                    'success' => false,
+                    'image_url' => curl_error($ch) ?: 'Curl request failed',
+                    'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                ];
+            }
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            // cleanup
+            $result = json_decode($response, true);
+            // dd($result);
+            if ($httpCode !== 200) {
+
+                $errorMessage = $result['error']['message'] 
+                    ?? 'OpenAI image generation failed';
+
+                return [
+                    'success' => false,
+                    'image_url' => $errorMessage,
+                    'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                ];
+            }
+            $base64 = $result['data'][0]['b64_json'];
+            if (!$base64) {
+                return [
+                    'success' => false,
+                    'image_url' => 'b64 image failed',
+                    'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                ];
+            }
+            // Create data URL
+            $imageUrl = 'data:image/png;base64,' . $base64;
+            return [
+                'success' => true,
+                'image_url' => $imageUrl,
+                'error' => null
+            ];
+        } catch (\Exception $e) {
+
+            return [
+                'success' => false,
+                'image_url' => 'OpenAI image generation error: ' . $e->getMessage(),
+                'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+            ];
+        }
         
     }
 
@@ -438,11 +477,20 @@ class AiPostGenerationController extends ResponseController
                         $textFormat
                     );
 
+                    // $images[] = [
+                    //     'slide' => $i + 1,
+                    //     'image_url' => $this->generateAIImage($imagePrompt),
+                    //     'image_error' => null,
+                    //     'status' => true,
+                    // ];
+
+                    $result = $this->generateAIImage($imagePrompt);
+
                     $images[] = [
                         'slide' => $i + 1,
-                        'image_url' => $this->generateAIImage($imagePrompt),
-                        'image_error' => null,
-                        'status' => true,
+                        'image_url' => $result['image_url'],
+                        'image_error' => $result['success'] ? null : $result['error'],
+                        'status' => $result['success'],
                     ];
 
                     sleep(3); // REQUIRED (2–5 seconds)
@@ -468,12 +516,21 @@ class AiPostGenerationController extends ResponseController
                     $textFormat
                 );
            
+                // $images[] = [
+                //     'slide' => 1,
+                //     'image_url' => $this->generateAIImage($imagePrompt),
+                //     'image_error' => null,
+                //     'status' => true,
+                // ];  
+
+                $result = $this->generateAIImage($imagePrompt);
+
                 $images[] = [
                     'slide' => 1,
-                    'image_url' => $this->generateAIImage($imagePrompt),
-                    'image_error' => null,
-                    'status' => true,
-                ];  
+                    'image_url' => $result['image_url'],
+                    'image_error' => $result['success'] ? null : $result['error'],
+                    'status' => $result['success'],
+                ];
             }
         }
 
@@ -831,6 +888,93 @@ class AiPostGenerationController extends ResponseController
             'image'  => asset('storage/uploads/gemini-crop/' . basename($outputPath))
         ]);
     }
+
+    //switching model for gemini fallback code 
+    // private function generateGeminiFallbackAIImage($prompt, $imagepath = null)
+    // {
+    //     $apiKey = config('services.gemini.key');
+
+    //     $models = [
+    //         'gemini-3-pro-image-preview',
+    //         'gemini-2.5-flash-image'
+    //     ];
+
+    //     foreach ($models as $model) {
+
+    //         try {
+
+    //             $response = Http::timeout(90)
+    //                 ->withHeaders([
+    //                     'Content-Type' => 'application/json',
+    //                 ])
+    //                 ->post(
+    //                     "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+    //                     [
+    //                         "contents" => [
+    //                             [
+    //                                 "parts" => array_filter([
+    //                                     $imagepath ? [
+    //                                         "inline_data" => [
+    //                                             "mime_type" => "image/png",
+    //                                             "data" => $imagepath,
+    //                                         ]
+    //                                     ] : null,
+    //                                     ["text" => $prompt]
+    //                                 ])
+    //                             ]
+    //                         ],
+    //                         "generationConfig" => [
+    //                             "imageConfig" => [
+    //                                 "aspectRatio" => "1:1",
+    //                                 "imageSize" => "SD",
+    //                             ]
+    //                         ]
+    //                     ]
+    //                 );
+
+    //             if ($response->successful()) {
+
+    //                 $data = $response->json();
+    //                 $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
+
+    //                 if ($base64) {
+    //                     $mimeType = data_get(
+    //                         $data,
+    //                         'candidates.0.content.parts.0.inlineData.mimeType',
+    //                         'image/png'
+    //                     );
+
+    //                     return [
+    //                         'success' => true,
+    //                         'image_url' => "data:{$mimeType};base64,{$base64}",
+    //                         'error' => null,
+    //                         'model_used' => $model
+    //                     ];
+    //                 }
+    //             }
+
+    //             // If NOT 503 → stop trying other models
+    //             if ($response->status() !== 503) {
+    //                 break;
+    //             }
+
+    //         } catch (\Exception $e) {
+
+    //             // Only retry next model if 503
+    //             if (!str_contains($e->getMessage(), '503')) {
+    //                 break;
+    //             }
+    //         }
+    //     }
+
+    //     return [
+    //         'success' => false,
+    //         'image_url' => null,
+    //         'error' => 'AI image server is currently overloaded. Try again later or upload manually.',
+    //         'model_used' => null
+    //     ];
+    // }
+
     
 
 }
