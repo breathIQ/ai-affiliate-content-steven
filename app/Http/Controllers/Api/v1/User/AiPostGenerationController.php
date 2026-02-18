@@ -616,111 +616,141 @@ class AiPostGenerationController extends ResponseController
             //   dd($imagepath,$prompt); 
                             // - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
         $response = null;
-        try{
-            // 2. Execute the Request
-                    //model : gemini-2.5-flash-image
-           $response = Http::timeout(90)
-                ->retry(2, 2000, function ($exception) {
-                    return $exception instanceof \Illuminate\Http\Client\ConnectionException;
-                })
-                ->withHeaders([
-                    'Content-Type' => 'application/json',
-                ])
-                ->post(
-                    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={$apiKey}",
-                    [
-                        "contents" => [
-                            ["parts" => [
-                                [
-                                    "inline_data" => [
-                                        "mime_type" => "image/png",
-                                        "data" => $imagepath,
+        $models = [
+            'gemini-3-pro-image-preview',
+            'gemini-2.5-flash-image'
+        ];
+        foreach ($models as $model) {
+            try{
+                // 2. Execute the Request
+                        //model : gemini-2.5-flash-image
+                $response = Http::timeout(90)
+                    ->withHeaders([
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->post(
+                        "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+                        [
+                            "contents" => [
+                                ["parts" => [
+                                    [
+                                        "inline_data" => [
+                                            "mime_type" => "image/png",
+                                            "data" => $imagepath,
+                                        ]
+                                    ],
+                                    ["text" => $prompt]
+                                    
                                     ]
-                                ],
-                                ["text" => $prompt]
                                 
                                 ]
-                            
-                            ]
-                        ],
-                        "generationConfig" => [
-                            "imageConfig" => [
-                                "aspectRatio" => "1:1",
-                                "imageSize" => "SD",
+                            ],
+                            "generationConfig" => [
+                                "imageConfig" => [
+                                    "aspectRatio" => "1:1",
+                                    "imageSize" => "SD",
+                                ]
                             ]
                         ]
-                    ]
-                );
-            // dd($response);
-            if ($response->failed()) {
-                // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
-                $errorData = $response->json();
-                $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error for image generation';
-                // return $this->sendError("Gemini Image API Error: " . $errorMessage);
+                    );
+                // dd($response);
+                // if ($response->failed()) {
+                //     // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
+                //     $errorData = $response->json();
+                //     $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error for image generation';
+                //     // return $this->sendError("Gemini Image API Error: " . $errorMessage);
+                //     return [
+                //         'success' => false,
+                //         'image_url' =>'',
+                //         'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                //     ];
+                
+
+                // }
+
+                $status = $response->status();
+            
+
+                if ($response->successful()) {
+                    // $data = $response->json();
+
+                    // // 3. Extract Base64 and save as URL
+                    
+                    $data = json_decode($response->body(), true);
+                    // if (!$data) {
+                    //     \Log::error('Invalid JSON from Gemini Image API', [
+                    //         'body' => $response->body()
+                    //     ]);
+                    //     // return $this->sendError('Invalid JSON from Gemini', [], 500);
+                    //     return [
+                    //         'success' => false,
+                    //         'image_url' => '',
+                    //         'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                    //     ];
+                    // }
+
+                    // $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
+                    $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
+                    // if (!$base64) {
+                    //     \Log::error('No image data returned', $data);
+                    //     // return $this->sendError('No image generated', $data, 500);
+                    //     return [
+                    //         'success' => false,
+                    //         'image_url' => '',
+                    //         'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                    //     ];
+                    // }
+                    // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
+                    $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
+                    // This creates a "URL" that contains the image itself
+                    $dataUrl = "data:{$mimeType};base64,{$base64}";
+                    // return $dataUrl;
+                    return [
+                        'success' => true,
+                        'image_url' => $dataUrl,
+                        'error' => null,
+                        'model_used' => $model
+                    ];
+                }
+
+                //RETRYABLE SERVER ERRORS → try next model
+                if (in_array($status, [429, 500, 502, 503, 504])) {
+
+                    // small delay before fallback
+                    usleep(800000); // 0.8 sec
+
+                    continue; // try next model
+                }
+                //  FATAL ERRORS → stop immediately
+                $errorMessage = $data['error']['message'] ?? 'Gemini API error';
+
                 return [
                     'success' => false,
-                    'image_url' =>'',
-                    'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+                    'image_url' => '',
+                    'error' => 'Currently this model server is down. Try another AI model or upload manually',
+                    'model_used' => $model
                 ];
-              
-
-            }
-
-            if ($response->successful()) {
-                // $data = $response->json();
-
-                // // 3. Extract Base64 and save as URL
-                
-                $data = json_decode($response->body(), true);
-                if (!$data) {
-                    \Log::error('Invalid JSON from Gemini Image API', [
-                        'body' => $response->body()
-                    ]);
-                    // return $this->sendError('Invalid JSON from Gemini', [], 500);
-                    return [
-                        'success' => false,
-                        'image_url' => '',
-                        'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
-                    ];
-                }
-
-                // $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
-                $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
-                if (!$base64) {
-                    \Log::error('No image data returned', $data);
-                    // return $this->sendError('No image generated', $data, 500);
-                    return [
-                        'success' => false,
-                        'image_url' => '',
-                        'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
-                    ];
-                }
-                // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
-                $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
-                // This creates a "URL" that contains the image itself
-                $dataUrl = "data:{$mimeType};base64,{$base64}";
-                // return $dataUrl;
+            } catch (\Exception $e) {
+                Log::error('Gemini image failed', [
+                    'status' => $response?->status(),
+                    'body' => $response?->body(),
+                    'error' => $e->getMessage()
+                ]);
+                // return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
                 return [
-                    'success' => true,
-                    'image_url' => $dataUrl,
-                    'error' => null
+                    'success' => false,
+                    'image_url' => '',
+                    'error' => 'Currently this model server is down. Try another AI model or upload manually.'
                 ];
             }
-            // return response()->json(['error' => 'Generation Failed'], 500);
-        } catch (\Exception $e) {
-            Log::error('Gemini image failed', [
-                'status' => $response?->status(),
-                'body' => $response?->body(),
-                'error' => $e->getMessage()
-            ]);
-            // return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
-            return [
-                'success' => false,
-                'image_url' => '',
-                'error' => 'Currently this model server is down. Try another AI model or upload manually.'
-            ];
         }
-
+        // All models failed (retryable errors exhausted)
+        return [
+            'success' => false,
+            'image_url' => '',
+            'error' => 'AI image servers are currently overloaded. Please try again later or upload manually.',
+            'model_used' => null
+        ];
         
     }
 
@@ -889,90 +919,113 @@ class AiPostGenerationController extends ResponseController
         ]);
     }
 
-    //switching model for gemini fallback code 
+    //backup code  for gemini image code 
     // private function generateGeminiFallbackAIImage($prompt, $imagepath = null)
     // {
-    //     $apiKey = config('services.gemini.key');
+    //     try{
+                // 2. Execute the Request
+                        //model : gemini-2.5-flash-image
+            //     $response = Http::timeout(90)
+            //         ->retry(2, 2000, function ($exception) {
+            //             return $exception instanceof \Illuminate\Http\Client\ConnectionException;
+            //         })
+            //         ->withHeaders([
+            //             'Content-Type' => 'application/json',
+            //         ])
+            //         ->post(
+            //             "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={$apiKey}",
+            //             [
+            //                 "contents" => [
+            //                     ["parts" => [
+            //                         [
+            //                             "inline_data" => [
+            //                                 "mime_type" => "image/png",
+            //                                 "data" => $imagepath,
+            //                             ]
+            //                         ],
+            //                         ["text" => $prompt]
+                                    
+            //                         ]
+                                
+            //                     ]
+            //                 ],
+            //                 "generationConfig" => [
+            //                     "imageConfig" => [
+            //                         "aspectRatio" => "1:1",
+            //                         "imageSize" => "SD",
+            //                     ]
+            //                 ]
+            //             ]
+            //         );
+            //     // dd($response);
+            //     if ($response->failed()) {
+            //         // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
+            //         $errorData = $response->json();
+            //         $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error for image generation';
+            //         // return $this->sendError("Gemini Image API Error: " . $errorMessage);
+            //         return [
+            //             'success' => false,
+            //             'image_url' =>'',
+            //             'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+            //         ];
+                
 
-    //     $models = [
-    //         'gemini-3-pro-image-preview',
-    //         'gemini-2.5-flash-image'
-    //     ];
+            //     }
 
-    //     foreach ($models as $model) {
+            //     if ($response->successful()) {
+            //         // $data = $response->json();
 
-    //         try {
+            //         // // 3. Extract Base64 and save as URL
+                    
+            //         $data = json_decode($response->body(), true);
+            //         if (!$data) {
+            //             \Log::error('Invalid JSON from Gemini Image API', [
+            //                 'body' => $response->body()
+            //             ]);
+            //             // return $this->sendError('Invalid JSON from Gemini', [], 500);
+            //             return [
+            //                 'success' => false,
+            //                 'image_url' => '',
+            //                 'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+            //             ];
+            //         }
 
-    //             $response = Http::timeout(90)
-    //                 ->withHeaders([
-    //                     'Content-Type' => 'application/json',
-    //                 ])
-    //                 ->post(
-    //                     "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-    //                     [
-    //                         "contents" => [
-    //                             [
-    //                                 "parts" => array_filter([
-    //                                     $imagepath ? [
-    //                                         "inline_data" => [
-    //                                             "mime_type" => "image/png",
-    //                                             "data" => $imagepath,
-    //                                         ]
-    //                                     ] : null,
-    //                                     ["text" => $prompt]
-    //                                 ])
-    //                             ]
-    //                         ],
-    //                         "generationConfig" => [
-    //                             "imageConfig" => [
-    //                                 "aspectRatio" => "1:1",
-    //                                 "imageSize" => "SD",
-    //                             ]
-    //                         ]
-    //                     ]
-    //                 );
-
-    //             if ($response->successful()) {
-
-    //                 $data = $response->json();
-    //                 $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
-
-    //                 if ($base64) {
-    //                     $mimeType = data_get(
-    //                         $data,
-    //                         'candidates.0.content.parts.0.inlineData.mimeType',
-    //                         'image/png'
-    //                     );
-
-    //                     return [
-    //                         'success' => true,
-    //                         'image_url' => "data:{$mimeType};base64,{$base64}",
-    //                         'error' => null,
-    //                         'model_used' => $model
-    //                     ];
-    //                 }
-    //             }
-
-    //             // If NOT 503 → stop trying other models
-    //             if ($response->status() !== 503) {
-    //                 break;
-    //             }
-
-    //         } catch (\Exception $e) {
-
-    //             // Only retry next model if 503
-    //             if (!str_contains($e->getMessage(), '503')) {
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     return [
-    //         'success' => false,
-    //         'image_url' => null,
-    //         'error' => 'AI image server is currently overloaded. Try again later or upload manually.',
-    //         'model_used' => null
-    //     ];
+            //         // $base64 = data_get($data, 'candidates.0.content.parts.0.inline_data.data');
+            //         $base64 = data_get($data, 'candidates.0.content.parts.0.inlineData.data');
+            //         if (!$base64) {
+            //             \Log::error('No image data returned', $data);
+            //             // return $this->sendError('No image generated', $data, 500);
+            //             return [
+            //                 'success' => false,
+            //                 'image_url' => '',
+            //                 'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
+            //             ];
+            //         }
+            //         // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
+            //         $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
+            //         // This creates a "URL" that contains the image itself
+            //         $dataUrl = "data:{$mimeType};base64,{$base64}";
+            //         // return $dataUrl;
+            //         return [
+            //             'success' => true,
+            //             'image_url' => $dataUrl,
+            //             'error' => null
+            //         ];
+            //     }
+            //     // return response()->json(['error' => 'Generation Failed'], 500);
+            // } catch (\Exception $e) {
+            //     Log::error('Gemini image failed', [
+            //         'status' => $response?->status(),
+            //         'body' => $response?->body(),
+            //         'error' => $e->getMessage()
+            //     ]);
+            //     // return $this->sendError('Error generating gemini image', ['error' => $e->getMessage()], 500);
+            //     return [
+            //         'success' => false,
+            //         'image_url' => '',
+            //         'error' => 'Currently this model server is down. Try another AI model or upload manually.'
+            //     ];
+            // }
     // }
 
     
