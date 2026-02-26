@@ -142,7 +142,7 @@ class InstagramAuthController extends ResponseController
         \Log::info('response of instgram',[$response->json()]);
         $data = $response->json();
         $shortLivedToken = $data['access_token'];
-        $instagramUserId = $data['user_id'];
+        // $instagramUserId = $data['user_id'];
 
         // Exchange for Long-Lived Token (60 days)
         $longLivedResponse = Http::get('https://graph.instagram.com/access_token', [
@@ -163,6 +163,7 @@ class InstagramAuthController extends ResponseController
 
         $name = $profileData['name'] ?? $profileData['username'] ?? 'Instagram User';
         $avatar = $profileData['profile_picture_url'] ?? null;
+        $instagramUserId = $profileData['id'];
 
         // Check if social account exists
         $social = SocialAccount::where([
@@ -286,7 +287,7 @@ class InstagramAuthController extends ResponseController
         \Log::info('response of instgram link account',[$response->json()]);
         $data = $response->json();
         $shortLivedToken = $data['access_token'];
-        $instagramUserId = $data['user_id'];
+        // $instagramUserId = $data['user_id'];
 
         // Exchange for Long-Lived Token (60 days)
         $longLivedResponse = Http::get('https://graph.instagram.com/access_token', [
@@ -306,7 +307,7 @@ class InstagramAuthController extends ResponseController
         ])->json();
 
         $name = $profileData['username'] ?? $profileData['name'] ?? 'Instagram User';
-        
+        $instagramUserId = $profileData['id'];
         $alreadyLinked = SocialAccount::where('provider', 'instagram')
             ->where('provider_user_id', $instagramUserId)
             ->where('user_id', '!=', $user->id)

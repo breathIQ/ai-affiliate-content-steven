@@ -367,7 +367,7 @@ class AiPostGenerationController extends ResponseController
             // cleanup
             $result = json_decode($response, true);
             // dd($result);
-            if ($httpCode !== 200) {
+            if ($httpCode != 200) {
 
                 $errorMessage = $result['error']['message'] 
                     ?? 'OpenAI image generation failed';
@@ -387,7 +387,13 @@ class AiPostGenerationController extends ResponseController
                 ];
             }
             // Create data URL
-            $imageUrl = 'data:image/png;base64,' . $base64;
+            // $imageUrl = 'data:image/png;base64,' . $base64;
+            $imageData = base64_decode($base64);
+            
+            // Generate a unique filename and save to your public disk
+            $fileName = 'posts/temp/ai_' . uniqid() . '.jpg';
+            Storage::disk('public')->put($fileName, $imageData);
+            $imageUrl = Storage::disk('public')->url($fileName);
             return [
                 'success' => true,
                 'image_url' => $imageUrl,
@@ -408,7 +414,7 @@ class AiPostGenerationController extends ResponseController
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         $affiliate_id = Auth::user()->affiliate_id;
-        $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram for a medical educational post. 
+        $prompt = "Create a clean, professional medical infographic image in a 4:5 square format optimized for Instagram for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
             SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
 
@@ -619,8 +625,9 @@ class AiPostGenerationController extends ResponseController
                             // - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
         $response = null;
         $models = [
-            'gemini-3-pro-image-preview',
-            'gemini-2.5-flash-image'
+            'gemini-2.5-flash-image',
+            'gemini-3-pro-image-preview'
+            
         ];
         foreach ($models as $model) {
             try{
@@ -703,16 +710,32 @@ class AiPostGenerationController extends ResponseController
                     //     ];
                     // }
                     // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
+                   
                     $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
+                    
                     // This creates a "URL" that contains the image itself
                     $dataUrl = "data:{$mimeType};base64,{$base64}";
                     // return $dataUrl;
+
+                    //$imageData = base64_decode($base64);
+            
+                    // Generate a unique filename and save to your public disk
+                    //$fileName = 'posts/temp/ai_' . uniqid() . '.jpg';
+                    //Storage::disk('public')->put($fileName, $imageData);
+                    //$dataUrl = Config::get('constant.frontend_url').'/storage/'.$fileName;
                     return [
                         'success' => true,
+                        // 'image_url' => $imageUrl,
                         'image_url' => $dataUrl,
                         'error' => null,
                         'model_used' => $model
                     ];
+                    // return [
+                    //     'success' => true,
+                    //     'image_url' => $dataUrl,
+                    //     'error' => null,
+                    //     'model_used' => $model
+                    // ];
                 }
 
                 //RETRYABLE SERVER ERRORS → try next model

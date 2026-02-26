@@ -267,9 +267,9 @@ class PostController extends ResponseController
                             $extension = match ($mime) {
                                 'image/png' => 'png',
                                 'image/jpeg' => 'jpg',
-                                'image/webp' => 'webp',
+                                // 'image/webp' => 'webp',
                                 'video/mp4' => 'mp4',
-                                default => 'bin',
+                                default => 'jpg',
                             };
 
                             $filename = Str::uuid() . '.' . $extension;
@@ -281,6 +281,17 @@ class PostController extends ResponseController
                                 $path,
                                 fopen($mediaItem['file'], 'r')
                             );
+
+                            $tempUrl = $mediaItem['file'];
+                            if (str_contains($tempUrl, 'posts/temp/')) {
+                                // Get everything after 'storage/' to get the disk path
+                                $tempPath = 'posts/temp/' . basename($tempUrl);
+                                
+                                if (Storage::disk('public')->exists($tempPath)) {
+                                    Storage::disk('public')->delete($tempPath);
+                                    \Log::info('Deleted temporary file: ' . $tempPath);
+                                }
+                            }
 
                         } catch (\Throwable $e) {
                             \Log::error('Failed to download media: ' . $e->getMessage());
@@ -311,7 +322,7 @@ class PostController extends ResponseController
                             'image/png' => 'png',
                             'image/jpeg' => 'jpg',
                             // 'image/webp' => 'webp',
-                            default => null,
+                            default => 'jpg',
                         };
 
                         if (!$extension) {
@@ -373,7 +384,7 @@ class PostController extends ResponseController
             $user = Auth::user();
 
             // Security check (important)
-            if ($post->user_id !== $user->id) {
+            if ($post->user_id != $user->id) {
                 return $this->sendError('Unauthorized', [], 403);
             }
 

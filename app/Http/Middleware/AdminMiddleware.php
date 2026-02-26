@@ -23,7 +23,7 @@ class AdminMiddleware
             return response()->json(['error' => 'Unauthorized. Token is missing or invalid.'], 401);
         }
         
-        if (!$user || $user->role_id !== Config::get('constant.role.Admin')) {
+        if (!$user || $user->role_id != Config::get('constant.role.Admin')) {
             return response()->json(['error' => 'Unauthorized. Admins only.'], 401); 
         }
 

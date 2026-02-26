@@ -23,7 +23,7 @@ class UserMiddleware
 
         $user = $request->user();
 
-        if (!$user || $user->role_id !== Config::get('constant.role.User')) {
+        if (!$user || $user->role_id != Config::get('constant.role.User')) {
             return response()->json(['error' => 'Unauthorized. User only.'], 401); 
         }
         return $next($request);
