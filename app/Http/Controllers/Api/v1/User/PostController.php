@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Services\{SocialTokenService};
 use App\Jobs\PublishPostToSocialMedia;
+use App\Jobs\PublishInstagramStory;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 
@@ -407,21 +408,49 @@ class PostController extends ResponseController
 
 
 
-    public function publishToTikTok(Post $post, SocialTokenService $tokenService)
-    {
-        $account = auth()->user()->socialAccounts()->where('platform', 'tiktok')->first();
+    // public function publishToTikTok(Post $post, SocialTokenService $tokenService)
+    // {
+    //     $account = auth()->user()->socialAccounts()->where('platform', 'tiktok')->first();
 
-        try {
-            $validToken = $tokenService->getValidToken($account);
+    //     try {
+    //         $validToken = $tokenService->getValidToken($account);
             
-            // Use $validToken to upload video/post to TikTok
-            $response = Http::withToken($validToken)
-                ->post('https://open.tiktokapis.com/v2/post/publish/video/init/', [
-                    // TikTok specific payload
-                ]);
+    //         // Use $validToken to upload video/post to TikTok
+    //         $response = Http::withToken($validToken)
+    //             ->post('https://open.tiktokapis.com/v2/post/publish/video/init/', [
+    //                 // TikTok specific payload
+    //             ]);
+
+    //     } catch (\Exception $e) {
+    //         return $this->sendError('Failed to publish to TikTok', ['error' => $e->getMessage()], 500);
+    //     }
+    // }
+
+    public function storypost(Post $post)
+    {
+        try {
+
+            $user = Auth::user();
+
+            // Security check (important)
+            if ($post->user_id != $user->id) {
+                return $this->sendError('Unauthorized', [], 403);
+            }
+
+            // Reset post status
+            $post->update([
+                'status' => 'processing',
+                'published_at' => null,
+            ]);
+
+            // Dispatch job again
+            \Log::info('Story post in processing', $post->toArray());
+            PublishInstagramStory::dispatch($post);
+
+            return $this->sendResponse([], 'Story post in processing', 200);
 
         } catch (\Exception $e) {
-            return $this->sendError('Failed to publish to TikTok', ['error' => $e->getMessage()], 500);
+            return $this->sendError('Something went wrong', [], 500);
         }
     }
 }

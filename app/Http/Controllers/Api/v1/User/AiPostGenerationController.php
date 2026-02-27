@@ -319,7 +319,7 @@ class AiPostGenerationController extends ResponseController
     //             'size' => '1024x1792', // portrait
     //             'quality' => 'standard',
     //         ], [
-    //             'timeout' => 120, // ⬅️ IMPORTANT
+    //             'timeout' => 120, // IMPORTANT
     //         ]);
 
     //         Log::info('image function response', [$response]);
@@ -331,26 +331,43 @@ class AiPostGenerationController extends ResponseController
 
     // }
 
-    private function generateAIImage($prompt)
+    private function generateAIImage($prompt,$imagePath)
     {
         $apiKey = Config::get('constant.open_ai_keys.key');
-        $imagePath = Storage::disk('public')->path('assets/cover-image.png');
+       
         try{
 
             $ch = curl_init("https://api.openai.com/v1/images/edits");
 
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "Authorization: Bearer {$apiKey}"
-            ]);
+            // curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            // curl_setopt($ch, CURLOPT_POST, true);
+            // curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            // curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            //     "Authorization: Bearer {$apiKey}"
+            // ]);
 
-            curl_setopt($ch, CURLOPT_POSTFIELDS, [
-                "model" => "gpt-image-1",
-                "prompt" => $prompt,
-                "image" => new CURLFile($imagePath, "image/png"),
-                "size" => "1024x1536" //"1024x1280"
+            // curl_setopt($ch, CURLOPT_POSTFIELDS, [
+            //     "model" => "gpt-image-1",
+            //     "prompt" => $prompt,
+            //     "image" => new CURLFile($imagePath, "image/png"),
+            //     "size" => "1024x1536" //"1024x1280"
+            // ]);
+
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_TIMEOUT => 280,              // total timeout
+                CURLOPT_CONNECTTIMEOUT => 30,        // connection timeout
+                CURLOPT_HTTPHEADER => [
+                    "Authorization: Bearer {$apiKey}"
+                ],
+                CURLOPT_POSTFIELDS => [
+                    "model" => "gpt-image-1.5",//"gpt-image-1",
+                    "prompt" => $prompt,
+                    "image" => new CURLFile($imagePath, "image/png"),
+                    "size" => "1024x1536", 
+                    "quality" => "low",
+                ]
             ]);
 
             $response = curl_exec($ch);
@@ -363,10 +380,11 @@ class AiPostGenerationController extends ResponseController
             }
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
-
+            \Log::info('open ai image generation $httpCode',['code'=>$httpCode]);
             // cleanup
             $result = json_decode($response, true);
             // dd($result);
+            \Log::info('open ai image generation',['result'=>$result['created']]);
             if ($httpCode != 200) {
 
                 $errorMessage = $result['error']['message'] 
@@ -410,11 +428,11 @@ class AiPostGenerationController extends ResponseController
         
     }
 
-    private function buildSlideImagePrompt($chapter, $design, $slideNumber,$textFormat)
+    private function buildSlideImagePrompt($chapter, $design,$textFormat)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         $affiliate_id = Auth::user()->affiliate_id;
-        $prompt = "Create a clean, professional medical infographic image in a 4:5 square format optimized for Instagram for a medical educational post. 
+        $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
             SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
 
@@ -446,27 +464,33 @@ class AiPostGenerationController extends ResponseController
            - Ensure all text is legible and centered within the frame with safe-zone margins.
             
             IMPORTANT LAYOUT RULES:
-            - Use a 4:5 vertical layout (1024x1280).
+            - Use a 4:5 vertical layout (1024x1536).
             - Keep all text within safe margins (at least 12% padding top and bottom).
             - Title must be fully visible at the top.
             - Book cover thumbnail must be fully visible at the bottom-right.
             - No cropping or edge-clipped text
             ";
 
-        return $prompt;
+        return ['prompt'=>$prompt,'imagepath'=>$imagePath];
     }
 
     private function getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat)
     {
         // dd($design);
         $images = [];
+        if($model === 'gemini'){
+            $imagePrompt = $this->buildGeminiImagePrompt($chapter,$design,$textFormat);
+        }else{
+            $imagePrompt = $this->buildSlideImagePrompt($chapter,$design,$textFormat);    
+        }   
+        set_time_limit(900);
         
         if ($postType === 'carousel') {
             
             for ($i = 0; $i < $slidesCount; $i++) {
-
+                 set_time_limit(180);   
                 if($model === 'gemini'){
-                    $result = $this->generateGeminiImage($chapter, $design,$textFormat);
+                    $result = $this->generateGeminiImage($imagePrompt['prompt'], $imagePrompt['imagepath']);
                     $images[] = [
                         'slide' => $i + 1,
                         'image_url' => $result['image_url'],
@@ -475,23 +499,12 @@ class AiPostGenerationController extends ResponseController
                         'model_used' =>$result['model_used'],
                     ];
 
-                    sleep(3); 
+                    if ($i < $slidesCount - 1) {
+                        sleep(1); 
+                    }
                 }else{
-                    $imagePrompt = $this->buildSlideImagePrompt(
-                        $chapter,
-                        $design,
-                        $i + 1,
-                        $textFormat
-                    );
-
-                    // $images[] = [
-                    //     'slide' => $i + 1,
-                    //     'image_url' => $this->generateAIImage($imagePrompt),
-                    //     'image_error' => null,
-                    //     'status' => true,
-                    // ];
-
-                    $result = $this->generateAIImage($imagePrompt);
+                    
+                    $result = $this->generateAIImage($imagePrompt['prompt'],$imagePrompt['imagepath']);
 
                     $images[] = [
                         'slide' => $i + 1,
@@ -500,7 +513,9 @@ class AiPostGenerationController extends ResponseController
                         'status' => $result['success'],
                     ];
 
-                    sleep(3); // REQUIRED (2–5 seconds)
+                    if ($i < $slidesCount - 1) {
+                        sleep(1); 
+                    } 
                 }
                 
             }
@@ -508,7 +523,7 @@ class AiPostGenerationController extends ResponseController
         } else {
             // Single post
             if($model === 'gemini'){
-                $result = $this->generateGeminiImage($chapter, $design,$textFormat);
+                $result = $this->generateGeminiImage($imagePrompt['prompt'], $imagePrompt['imagepath']);
                 $images[] = [
                     'slide' => 1,
                     'image_url' => $result['image_url'],
@@ -517,21 +532,7 @@ class AiPostGenerationController extends ResponseController
                     'model_used' =>$result['model_used'],
                 ];
             }else{
-                $imagePrompt = $this->buildSlideImagePrompt(
-                    $chapter,
-                    $design,
-                    1,
-                    $textFormat
-                );
-           
-                // $images[] = [
-                //     'slide' => 1,
-                //     'image_url' => $this->generateAIImage($imagePrompt),
-                //     'image_error' => null,
-                //     'status' => true,
-                // ];  
-
-                $result = $this->generateAIImage($imagePrompt);
+                $result = $this->generateAIImage($imagePrompt['prompt'],$imagePrompt['imagepath']);
 
                 $images[] = [
                     'slide' => 1,
@@ -546,94 +547,21 @@ class AiPostGenerationController extends ResponseController
     }
 
 
-    public function generateGeminiImage($chapter, $design,$textFormat) 
+    private function generateGeminiImage($prompt, $imagepath) 
     {
-        $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
-        $imagepath =  base64_encode(file_get_contents($image_storage_path));
-        
-            // $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
-            // $image = imagecreatefrompng($image_storage_path);
-            // // Get original width & height
-            // $width = imagesx($image);
-            // $height = imagesy($image);
-
-            // // Desired max size (longest side)
-            // $maxSize = 128;
-
-            // // Calculate new width & height proportionally
-            // if ($width > $height) {
-            //     $new_width = $maxSize;
-            //     $new_height = intval($height * ($maxSize / $width));
-            // } else {
-            //     $new_height = $maxSize;
-            //     $new_width = intval($width * ($maxSize / $height));
-            // }
-            // $resized = imagescale($image, $new_width, $new_height); // smaller for Gemini
-            // ob_start();
-            // imagepng($resized);
-            // $imageContents = ob_get_clean();
-            // $imagepath = base64_encode($imageContents);
-            // imagedestroy($image);
-            // imagedestroy($resized);
-        // dd(strlen($imagepath)/1024);
-       
-        $affiliate_id = Auth::user()->affiliate_id;
         $apiKey = Config::get('constant.gemini_keys.key');
-        //    dd($apiKey);
-
-        $prompt = "Create a clean, professional medical infographic image optimized for Instagram portrait posts.
-        
-                Target size & format:
-                - Portrait layout, 1080 × 1350 px (4:5 ratio) for maximum feed coverage.
-                - All important content must be placed strictly inside a centered inner safe area to avoid cropping.
-
-                Content to include inside the safe area:
-                - A semi-transparent illustration highlighting {$chapter->chapter_title}.
-                - Title at the top: 'The Carbonated Body'
-                - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
-                - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
-                - Provide plenty of breathing space between the content and the edges.
-
-                THUMBNAIL ELEMENT:
-                - In the bottom-left corner, place the EXACT cover image provided in payload as a static thumbnail.
-                - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover image.
-                - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
-                - Scale down the cover only as needed.
-
-                AFFILIATE FOOTER:
-                - At the very bottom inside the safe area, centered horizontally, 
-                include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
-
-                VISUAL CENTERPIECE: 
-                - Use a 4:5 vertical layout (1080 × 1350 px).
-                Visual style: {$design['image_style']}
-                Mood: {$design['visual_mood']}
-                Audience tone: {$design['human_presence']}
-                Angle: {$design['content_angle']}
-
-                Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
-        
-        // $prompt = "Create a clean 1:1 Instagram medical infographic. 
-        //     Include a centered visual for '{$chapter->chapter_title}'.
-        //     Add the title 'The Carbonated Body' on top and subtitle '{$chapter->chapter}: {$chapter->chapter_title}' below.
-        //     Use visual style: {$design['image_style']}, mood: {$design['visual_mood']}, tone: {$design['human_presence']}.
-        //     Place the cover thumbnail in bottom-left corner as-is, do not alter it.
-        //     Keep content clear with breathing space.";
-
-
-            //   dd($imagepath,$prompt); 
-                            // - On a clean, semi-transparent overlay or clear negative space, include **either**: A single concise sentence **OR** 4-5 very short bullet points summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
         $response = null;
         $models = [
-            'gemini-2.5-flash-image',
-            'gemini-3-pro-image-preview'
+            
+            'gemini-3-pro-image-preview',
+            'gemini-2.5-flash-image'
             
         ];
         foreach ($models as $model) {
             try{
                 // 2. Execute the Request
                         //model : gemini-2.5-flash-image
-                $response = Http::timeout(90)
+                $response = Http::timeout(240)
                     ->withHeaders([
                         'Content-Type' => 'application/json',
                     ])
@@ -656,26 +584,13 @@ class AiPostGenerationController extends ResponseController
                             ],
                             "generationConfig" => [
                                 "imageConfig" => [
-                                    "aspectRatio" => "1:1",
+                                    "aspectRatio" => "4:5",
                                     "imageSize" => "SD",
                                 ]
                             ]
                         ]
                     );
                 // dd($response);
-                // if ($response->failed()) {
-                //     // This will show you the ACTUAL reason (e.g., "Invalid model name" or "Safety block")  
-                //     $errorData = $response->json();
-                //     $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error for image generation';
-                //     // return $this->sendError("Gemini Image API Error: " . $errorMessage);
-                //     return [
-                //         'success' => false,
-                //         'image_url' =>'',
-                //         'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
-                //     ];
-                
-
-                // }
 
                 $status = $response->status();
             
@@ -711,40 +626,33 @@ class AiPostGenerationController extends ResponseController
                     // }
                     // $mimeType = data_get($data, 'candidates.0.content.parts.0.inline_data.mime_type', 'image/png');
                    
-                    $mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
+                    //$mimeType = data_get($data, 'candidates.0.content.parts.0.inlineData.mimeType', 'image/png');
                     
                     // This creates a "URL" that contains the image itself
-                    $dataUrl = "data:{$mimeType};base64,{$base64}";
+                   // $dataUrl = "data:{$mimeType};base64,{$base64}";
                     // return $dataUrl;
 
-                    //$imageData = base64_decode($base64);
+                    $imageData = base64_decode($base64);
             
                     // Generate a unique filename and save to your public disk
-                    //$fileName = 'posts/temp/ai_' . uniqid() . '.jpg';
-                    //Storage::disk('public')->put($fileName, $imageData);
-                    //$dataUrl = Config::get('constant.frontend_url').'/storage/'.$fileName;
+                    $fileName = 'posts/temp/gai_' . uniqid() . '.jpg';
+                    Storage::disk('public')->put($fileName, $imageData);
+                    $dataUrl = Storage::disk('public')->url($fileName);
                     return [
                         'success' => true,
-                        // 'image_url' => $imageUrl,
                         'image_url' => $dataUrl,
                         'error' => null,
                         'model_used' => $model
                     ];
-                    // return [
-                    //     'success' => true,
-                    //     'image_url' => $dataUrl,
-                    //     'error' => null,
-                    //     'model_used' => $model
-                    // ];
+                  
                 }
-
+                $retryDelay = 2;
                 //RETRYABLE SERVER ERRORS → try next model
                 if (in_array($status, [429, 500, 502, 503, 504])) {
 
-                    // small delay before fallback
-                    usleep(800000); // 0.8 sec
-
-                    continue; // try next model
+                   sleep($retryDelay);
+                    $retryDelay *= 2; // exponential backoff
+                    continue;
                 }
                 //  FATAL ERRORS → stop immediately
                 $errorMessage = $data['error']['message'] ?? 'Gemini API error';
@@ -778,6 +686,75 @@ class AiPostGenerationController extends ResponseController
             'model_used' => null
         ];
         
+    }
+
+    private function buildGeminiImagePrompt($chapter,$design,$textFormat){
+        $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+        $imagepath =  base64_encode(file_get_contents($image_storage_path));
+        
+            // $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+            // $image = imagecreatefrompng($image_storage_path);
+            // // Get original width & height
+            // $width = imagesx($image);
+            // $height = imagesy($image);
+
+            // // Desired max size (longest side)
+            // $maxSize = 128;
+
+            // // Calculate new width & height proportionally
+            // if ($width > $height) {
+            //     $new_width = $maxSize;
+            //     $new_height = intval($height * ($maxSize / $width));
+            // } else {
+            //     $new_height = $maxSize;
+            //     $new_width = intval($width * ($maxSize / $height));
+            // }
+            // $resized = imagescale($image, $new_width, $new_height); // smaller for Gemini
+            // ob_start();
+            // imagepng($resized);
+            // $imageContents = ob_get_clean();
+            // $imagepath = base64_encode($imageContents);
+            // imagedestroy($image);
+            // imagedestroy($resized);
+        // dd(strlen($imagepath)/1024);
+       
+        $affiliate_id = Auth::user()->affiliate_id;
+      
+        //    dd($apiKey);
+
+        $prompt = "Create a clean, professional medical infographic image optimized for Instagram portrait posts.
+        
+                Target size & format:
+                - Portrait layout, 1080 × 1350 px (4:5 ratio) for maximum feed coverage.
+                - All important content must be placed strictly inside a centered inner safe area to avoid cropping.
+
+                Content to include inside the safe area:
+                - A semi-transparent illustration highlighting {$chapter->chapter_title}.
+                - Title at the top: 'The Carbonated Body'
+                - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
+                - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+                - Provide plenty of breathing space between the content and the edges.
+
+                THUMBNAIL ELEMENT:
+                - In the bottom-left corner, place the EXACT cover image provided in payload as a static thumbnail.
+                - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover image.
+                - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
+                - Scale down the cover only as needed.
+
+                AFFILIATE FOOTER:
+                - At the very bottom inside the safe area, centered horizontally, 
+                include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
+
+                VISUAL CENTERPIECE: 
+                - Use a 4:5 vertical layout (1080 × 1350 px).
+                Visual style: {$design['image_style']}
+                Mood: {$design['visual_mood']}
+                Audience tone: {$design['human_presence']}
+                Angle: {$design['content_angle']}
+
+                Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
+
+        return ['prompt'=>$prompt,'imagepath'=>$imagepath];
     }
 
     private function getSystemInstruction($chapter)
