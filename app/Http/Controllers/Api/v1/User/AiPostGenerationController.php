@@ -352,10 +352,9 @@ class AiPostGenerationController extends ResponseController
             //     "model" => "gpt-image-1",
             //     "prompt" => $prompt,
             //     "image" => new CURLFile($imagePath, "image/png"),
-            //     "size" => "1024x1536", //"1024x1280",
-            //     // "response_format" => "b64_json"
+            //     "size" => "1024x1536" //"1024x1280"
             // ]);
-    
+
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_POST => true,
@@ -833,6 +832,75 @@ class AiPostGenerationController extends ResponseController
             
         return ['prompt'=>$prompt,'imagepath'=>$imagepath];
     }
+
+    // private function buildGeminiImagePrompt($chapter,$design,$textFormat){
+    //     $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+    //     $imagepath =  base64_encode(file_get_contents($image_storage_path));
+        
+    //         // $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
+    //         // $image = imagecreatefrompng($image_storage_path);
+    //         // // Get original width & height
+    //         // $width = imagesx($image);
+    //         // $height = imagesy($image);
+
+    //         // // Desired max size (longest side)
+    //         // $maxSize = 128;
+
+    //         // // Calculate new width & height proportionally
+    //         // if ($width > $height) {
+    //         //     $new_width = $maxSize;
+    //         //     $new_height = intval($height * ($maxSize / $width));
+    //         // } else {
+    //         //     $new_height = $maxSize;
+    //         //     $new_width = intval($width * ($maxSize / $height));
+    //         // }
+    //         // $resized = imagescale($image, $new_width, $new_height); // smaller for Gemini
+    //         // ob_start();
+    //         // imagepng($resized);
+    //         // $imageContents = ob_get_clean();
+    //         // $imagepath = base64_encode($imageContents);
+    //         // imagedestroy($image);
+    //         // imagedestroy($resized);
+    //     // dd(strlen($imagepath)/1024);
+       
+    //     $affiliate_id = Auth::user()->affiliate_id;
+      
+    //     //    dd($apiKey);
+
+    //     $prompt = "Create a clean, professional medical infographic image optimized for Instagram portrait posts.
+        
+    //             Target size & format:
+    //             - Portrait layout, 1080 × 1350 px (4:5 ratio) for maximum feed coverage.
+    //             - All important content must be placed strictly inside a centered inner safe area to avoid cropping.
+
+    //             Content to include inside the safe area:
+    //             - A semi-transparent illustration highlighting {$chapter->chapter_title}.
+    //             - Title at the top: 'The Carbonated Body'
+    //             - SUBTITLE: '{$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title)
+    //             - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+    //             - Provide plenty of breathing space between the content and the edges.
+
+    //             THUMBNAIL ELEMENT:
+    //             - In the bottom-left corner, place the EXACT cover image provided in payload as a static thumbnail.
+    //             - Do NOT redesign, recolor, restyle, reinterpret, or regenerate the cover image.
+    //             - Preserve the original text, colors, typography, proportions, and layout exactly as provided.
+    //             - Scale down the cover only as needed.
+
+    //             AFFILIATE FOOTER:
+    //             - At the very bottom inside the safe area, centered horizontally, 
+    //             include this exact URL in small, clean, readable typography:'https://co2body.com/{$affiliate_id}'
+
+    //             VISUAL CENTERPIECE: 
+    //             - Use a 4:5 vertical layout (1080 × 1350 px).
+    //             Visual style: {$design['image_style']}
+    //             Mood: {$design['visual_mood']}
+    //             Audience tone: {$design['human_presence']}
+    //             Angle: {$design['content_angle']}
+
+    //             Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
+
+    //     return ['prompt'=>$prompt,'imagepath'=>$imagepath];
+    // }
 
     private function getSystemInstruction($chapter)
     {

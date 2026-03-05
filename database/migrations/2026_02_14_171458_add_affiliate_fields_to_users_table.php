@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table) {
             $table->string('other_affiliate_id', 10)->nullable()->after('affiliate_id');
 
-            $table->string('amazon_link')->after('other_affiliate_id');
+            $table->string('amazon_link')->nullable()->after('other_affiliate_id');
 
             $table->boolean('affiliate_id_editable')
                   ->default(1)
