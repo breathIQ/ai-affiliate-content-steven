@@ -16,6 +16,9 @@ use App\Services\{SocialTokenService};
 use App\Jobs\PublishPostToSocialMedia;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Intervention\Image\Laravel\Facades\Image;
+use Illuminate\Support\Facades\Config;
+
 
 class PostController extends ResponseController
 {
@@ -45,6 +48,7 @@ class PostController extends ResponseController
                 // Get primary media
                 $media = $post->media->sortBy('media_order')->first();
                 $mediaUrl = $media ? asset(Storage::url($media->media_path)) : null;
+                //$mediaUrl = $media ? Config::get('constant.frontend_url').'/storage/'.$media->media_path : null;
                 $media_type = $media ? $media->media_type : null;
                 // Parse hashtags
                 $hashtagsCount = 0;
@@ -108,6 +112,7 @@ class PostController extends ResponseController
                     'id' => $m->id,
                     'media_type' => $m->media_type,
                     'url' => asset(Storage::url($m->media_path)),
+                    //'url' => Config::get('constant.frontend_url').'/storage/'.$m->media_path,
                     'order' => $m->media_order
                 ];
             });
@@ -267,9 +272,9 @@ class PostController extends ResponseController
                             $extension = match ($mime) {
                                 'image/png' => 'png',
                                 'image/jpeg' => 'jpg',
-                                'image/webp' => 'webp',
+                                // 'image/webp' => 'webp',
                                 'video/mp4' => 'mp4',
-                                default => 'bin',
+                                default => 'jpg',
                             };
 
                             $filename = Str::uuid() . '.' . $extension;
@@ -281,6 +286,18 @@ class PostController extends ResponseController
                                 $path,
                                 fopen($mediaItem['file'], 'r')
                             );
+                            
+                            $tempUrl = $mediaItem['file'];
+                            if (str_contains($tempUrl, 'posts/temp/')) {
+                                // Get everything after 'storage/' to get the disk path
+                                $tempPath = 'posts/temp/' . basename($tempUrl);
+                                
+                                if (Storage::disk('public')->exists($tempPath)) {
+                                    Storage::disk('public')->delete($tempPath);
+                                    \Log::info('Deleted temporary file: ' . $tempPath);
+                                }
+                            }
+                            
 
                         } catch (\Throwable $e) {
                             \Log::error('Failed to download media: ' . $e->getMessage());
@@ -311,7 +328,7 @@ class PostController extends ResponseController
                             'image/png' => 'png',
                             'image/jpeg' => 'jpg',
                             // 'image/webp' => 'webp',
-                            default => null,
+                            default => 'jpg',
                         };
 
                         if (!$extension) {
@@ -326,9 +343,16 @@ class PostController extends ResponseController
                         }
 
                         $filename = Str::uuid() . '.' . $extension;
+                        // $filename = Str::uuid() .'.jpg';
                         $path = "posts/media/$filename";
+                        
+                        // Re-encode to a standard JPEG (Meta-safe)
+                        // $img = Image::read($binaryData)->encodeByExtension('jpg', quality: 90);
+
 
                         Storage::disk('public')->put($path, $binaryData);
+                        
+                        // Storage::disk('public')->put($path, (string) $img);
                         
                         if (!Storage::disk('public')->exists($path)) {
                             \Log::error("Failed to store base64 image at $path");
@@ -373,7 +397,7 @@ class PostController extends ResponseController
             $user = Auth::user();
 
             // Security check (important)
-            if ($post->user_id !== $user->id) {
+            if ($post->user_id != $user->id) {
                 return $this->sendError('Unauthorized', [], 403);
             }
 
@@ -384,7 +408,7 @@ class PostController extends ResponseController
             ]);
 
             // Dispatch job again
-            \Log::info('Post reposted in processing', $post->toArray());
+            \Log::info('Post reposted in processing--ww', $post->toArray());
             PublishPostToSocialMedia::dispatch($post);
 
             return $this->sendResponse([], 'Post reposted in processing', 200);

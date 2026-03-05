@@ -35,7 +35,13 @@ class PublishPostToSocialMedia implements ShouldQueue
      */
     public function handle(): void
     {
-        
+        // if (function_exists('opcache_reset')) {
+        //     opcache_reset();
+        //     \Log::info("OPcache has been reset!");
+        // } else {
+        //     \Log::info("OPcache is not enabled.");
+        // }
+       
         $platforms = $this->post->platforms()->whereIn('status', ['processing','failed'])->get();  
         $user = $this->post->user;
         $hasFailure = false;
@@ -43,16 +49,20 @@ class PublishPostToSocialMedia implements ShouldQueue
         foreach ($platforms as $platformRecord) {
             try {
                
+            $platform = $platformRecord->platform;
+            \Log::info("Social account details for: {$platform}");
                 $account = $user->socialAccounts()->where('provider', $platformRecord->platform)->first();
-                Log::info("Social account details for {$platformRecord->platform}", [$account]);
+                \Log::info("Social account details for:= {$platformRecord->platform}", [$account]);
                 if (!$account) {
                     throw new Exception("Social account for {$platformRecord->platform} not linked.");
                 }
 
-                if ($platformRecord->platform === 'instagram') {
+                if ($platform == 'instagram') {
+                    \Log::info("Publishing to instagram for Post");
+
                     $this->publishToInstagram($account);
-                } elseif ($platformRecord->platform === 'tiktok') {
-                    Log::info("Publishing to TikTok for Post {$this->post->id}");
+                } elseif ($platform === 'tiktok') {
+                    \Log::info("Publishing to TikTok for Post {$this->post->id}");
                     //$this->publishToTikTok($account);
                 }
 
@@ -84,20 +94,28 @@ class PublishPostToSocialMedia implements ShouldQueue
             
         
     }
+    
+    // private function checkLog(){
+    //     \Log::info('Testing cache issues log-123');
+    //     return true;
+    // }
 
     private function publishToInstagram($account)
     {
         \Log::info("Instagram account details: ". $account);
         $mediaItems = $this->post->media()->orderBy('media_order')->get();
+       
         $token = $account->access_token;
         $igId = $account->provider_user_id ;
-        \Log::info("Instagram account published section:");
+        // \Log::info("Instagram account published section:");
         
         if ($mediaItems->count() > 1) {
             // Carousel Flow
             \Log::info("Instagram account published section: Carousel Flow");
             $itemIds = [];
             foreach ($mediaItems as $item) {
+                
+            \Log::info("Instagram account published section: mediaItems");
                 $itemIds[] = $this->createIgContainer($igId, $token, $item, true);
             }
             $containerId = $this->createIgCarouselMaster($igId, $token, $itemIds);
@@ -113,34 +131,73 @@ class PublishPostToSocialMedia implements ShouldQueue
         return $this->finalizeIgPublish($igId, $token, $containerId);
     }
 
+    // private function createIgContainer($igId, $token, $media, $isCarouselItem)
+    // {
+        
+    //     $url = asset(Storage::url($media->media_path));
+    //     \Log::info("media path-sleep:".$url);
+    //     // $fullCaption = $this->getFormattedCaption('instagram');
+    //     $params = [
+    //         'access_token' => $token,
+    //     ];
+        
+    //     if ($isCarouselItem) {
+    //         $params['is_carousel_item'] = true;
+    //     } else {
+    //         $params['caption'] = $this->getFormattedCaption('instagram');
+    //     }
+
+    //     if ($media->media_type === 'video') {
+    //         $params['video_url'] = $url;
+    //         $params['media_type'] = 'REELS';
+    //     } else {
+    //         // \Log::info("media path:image_url--".$url);
+    //         $params['image_url'] = $url;
+    //     }
+        
+    //     Log::info('params--',['param'=>$params]);
+    //     $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", $params);
+    //     \Log::info("Instagram account published section: createIgContainer response: " . $response->body());
+    //     if ($response->failed()) throw new Exception("IG Container Error: " . $response->body());
+        
+    //     return $response->json()['id'];
+    // }
+    
     private function createIgContainer($igId, $token, $media, $isCarouselItem)
     {
-        $url =  asset(Storage::url($media->media_path));
-        \Log::info("media path:".$url);
-        $fullCaption = $this->getFormattedCaption('instagram');
+        
+        $url = asset(Storage::url($media->media_path));
+        //  $url = "https://co2body.com/storage/".$media->media_path;
+        \Log::info("IG media url--le: ".$url);
+    
         $params = [
-            'access_token' => $token,
-            'is_carousel_item' => $isCarouselItem
+            'access_token'     => $token,
+            'is_carousel_item' => $isCarouselItem,
         ];
-
-        // If it's a single post, attach the caption here
+    
         if (!$isCarouselItem) {
-            $params['caption'] = $fullCaption;
+            $params['caption'] = $this->getFormattedCaption('instagram');
         }
-
+    
         if ($media->media_type === 'video') {
-            $params['video_url'] = $url;
+            $params['video_url']  = $url;
             $params['media_type'] = 'REELS';
         } else {
             $params['image_url'] = $url;
         }
-
+    
+        \Log::info('IG params', $params);
+    
         $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", $params);
-        \Log::info("Instagram account published section: createIgContainer response: " . $response->body());
-        if ($response->failed()) throw new Exception("IG Container Error: " . $response->body());
-        
+        \Log::info("IG create container response: ".$response->body());
+    
+        if ($response->failed()) {
+            throw new Exception("IG Container Error: " . $response->body());
+        }
+    
         return $response->json()['id'];
     }
+  
 
     private function createIgCarouselMaster($igId, $token, $itemIds)
     {
@@ -365,13 +422,13 @@ class PublishPostToSocialMedia implements ShouldQueue
         ]);
 
        $captionText = implode("\n\n", $parts);
-       Log::info('affiliate link: ' . Config::get('constant.frontend_url').'/'.$this->post->user->affiliate_id);
+    //   Log::info('affiliate link: ' . Config::get('constant.frontend_url').'/'.$this->post->user->affiliate_id);
        
         // // If an affiliate URL exists, append it at the bottom
         // if ($this->post->affiliate_url) {
         //     $captionText .= "\n\n🔗 Copy The Link: " . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
         // }
-        Log::info("Caption Text: " . $captionText);
+        // Log::info("Caption Text: " . $captionText);
         return $captionText;
     }
 
@@ -394,7 +451,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         $attempts = 0;
 
         do {
-            sleep(3);
+            sleep(2);
 
             $response = Http::get("https://graph.instagram.com/v19.0/{$containerId}", [
                 'fields' => 'status_code',

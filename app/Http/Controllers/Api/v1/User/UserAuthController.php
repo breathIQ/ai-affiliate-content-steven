@@ -282,6 +282,7 @@ class UserAuthController extends ResponseController
                 'name' => $user->name,
                 'email' => $user->email,
                 'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
+                // 'avatar' => $user->avatar ? Config::get('constant.frontend_url').'/storage/'.$user->avatar : null,
                 'affiliate_id' => $user->affiliate_id ?? '', // Assuming this exists or is username
                 'affiliate_link' => 'https://co2body.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
                 'other_affiliate_id' => $user->other_affiliate_id,
@@ -311,7 +312,7 @@ class UserAuthController extends ResponseController
             $user = Auth::user();
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+                'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
 
                 'affiliate_id' => 'nullable|string|max:60|unique:users,affiliate_id,' . $user->id,
                 'other_affiliate_id'  => 'nullable|digits_between:1,10',
