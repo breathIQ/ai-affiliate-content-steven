@@ -53,6 +53,9 @@ class AiPostGenerationController extends ResponseController
             ->where('chapters.id', $request->chapter)
             ->select('chapters.id', 'chapters.chapter','chapters.content', 'book_chapters.chapter_title as chapter_title')
             ->first();
+        if (!$chapter) {
+            $chapter = Chapter::where('id', $request->chapter)->first(); 
+        }
         $modelChoice = $request->model;
         $userPrompt = $request->prompt;
 

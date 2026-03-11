@@ -64,6 +64,7 @@ class PublishPostToSocialMedia implements ShouldQueue
                 } elseif ($platform === 'tiktok') {
                     \Log::info("Publishing to TikTok for Post {$this->post->id}");
                     //$this->publishToTikTok($account);
+                    $this->tiktokPublish($account);
                 }
 
                 $platformRecord->update(['status' => 'published','published_at' => now()]);
@@ -86,6 +87,7 @@ class PublishPostToSocialMedia implements ShouldQueue
                 'status' => 'failed',
             ]);
         } else {
+             Log::info("Post {$this->post->id} published successfully");
             $this->post->update([
                 'status' => 'published',
                 'published_at' => now()
@@ -169,7 +171,9 @@ class PublishPostToSocialMedia implements ShouldQueue
         // $url = asset(Storage::url($media->media_path));
         // $url = "https://co2body.com/storage/posts/media/90d4ad8a-b515-4ab4-94f4-399541c10ecd.jpg";
         // $url = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/PNG_Test.png/500px-PNG_Test.png?20260224095916";
-         $url = "https://co2body.com/storage/".$media->media_path;
+        //  $url = "https://co2body.com/storage/".$media->media_path;
+        
+        $url = Config::get('constant.frontend_url') . '/storage/'.$media->media_path;
         \Log::info("IG media url--le: ".$url);
     
         $params = [
@@ -415,23 +419,48 @@ class PublishPostToSocialMedia implements ShouldQueue
     }
 
 
+    // private function getFormattedCaption($platform)
+    // {
+    //     // Combines Script + Caption + Hashtags with line breaks
+    //     $parts = array_filter([
+    //         $this->post->caption . "\n🔗 Copy The Link: " . Config::get('constant.frontend_url').'/'.$this->post->user->affiliate_id,  // Short catchy caption
+    //         $this->post->hastag    // The hashtags 
+    //     ]);
+
+    //   $captionText = implode("\n\n", $parts);
+    // //   Log::info('affiliate link: ' . Config::get('constant.frontend_url').'/'.$this->post->user->affiliate_id);
+       
+    //     // // If an affiliate URL exists, append it at the bottom
+    //     // if ($this->post->affiliate_url) {
+    //     //     $captionText .= "\n\n🔗 Copy The Link: " . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
+    //     // }
+    //     // Log::info("Caption Text: " . $captionText);
+    //     return $captionText;
+    // }
+    
     private function getFormattedCaption($platform)
     {
-        // Combines Script + Caption + Hashtags with line breaks
+        $affiliateLink = "🔗 Copy The Link: " . Config::get('constant.frontend_url') . '/' . $this->post->user->affiliate_id;
+        $mainCaption = $this->post->caption;
+        $hashtags = $this->post->hastag;
+
+        if (strtolower($platform) === 'tiktok') {
+            return [
+                // Title: Max 90 chars (Short & Hooky)
+                'title' => mb_strimwidth($mainCaption, 0, 80, "..."),
+                
+                // Description: Max 4000 chars (The link + full text + hashtags)
+                'description' => $mainCaption . "\n\n" . $affiliateLink . "\n\n" . $hashtags
+            ];
+        }
+
+        // Instagram: Keep the original long format
         $parts = array_filter([
-            $this->post->caption . "\n🔗 Copy The Link: " . Config::get('constant.frontend_url').'/'.$this->post->user->affiliate_id,  // Short catchy caption
-            $this->post->hastag    // The hashtags 
+            $mainCaption . "\n" . $affiliateLink,
+            $hashtags
         ]);
 
-       $captionText = implode("\n\n", $parts);
-    //   Log::info('affiliate link: ' . Config::get('constant.frontend_url').'/'.$this->post->user->affiliate_id);
-       
-        // // If an affiliate URL exists, append it at the bottom
-        // if ($this->post->affiliate_url) {
-        //     $captionText .= "\n\n🔗 Copy The Link: " . url('al/'.$this->post->id.'/'.$this->post->user->affiliate_id.'?ref='.$platform);
-        // }
-        // Log::info("Caption Text: " . $captionText);
-        return $captionText;
+        return mb_strimwidth(implode("\n\n", $parts), 0, 2100, "...");
     }
 
 
@@ -481,6 +510,295 @@ class PublishPostToSocialMedia implements ShouldQueue
         }
 
         return true;
+    }
+    
+    
+     //**************************Tiktok publishing code********************************************* */
+
+    private function tiktokPublish($account)
+    {
+        $mediaItems = $this->post->media()->orderBy('media_order')->get();
+
+        $images = [];
+        $videos = [];
+
+        $tempFiles = [];
+        foreach ($mediaItems as $media) {
+            
+            if ($media->media_type === 'image') {
+                $localPath = Storage::disk('public')->path($media->media_path);
+                $webpData = $this->convertToWebp($localPath);
+                // $images[] = asset('storage/posts/temp/' . $webpData['filename']);
+                $images[] = Config::get('constant.frontend_url') . '/storage/posts/temp/' . $webpData['filename'];
+                $tempFiles[] = $webpData['full_path']; // Track for cleanup
+            }
+
+            if ($media->media_type === 'video') {
+                // $videos[] = Storage::disk('public')->path($media->media_path);
+                $videos[] = Config::get('constant.frontend_url') . '/storage/' . $media->media_path;
+                
+            }
+        }
+
+        $caption = $this->getFormattedCaption('tiktok');
+
+
+        $responses = [];
+
+        /*
+        |----------------------------------------
+        | IMAGE SLIDESHOW
+        |----------------------------------------
+        */
+        if (!empty($images)) {
+            // $images = ["https://co2body.com/storage/posts/media/nature.webp","https://co2body.com/storage/posts/media/tree.webp"];
+            Log::info('images--',[$images]);
+            $initData = $this->initPost("PHOTO", $images, $caption, $account);
+
+            Log::info('TikTok Image Init Success', [$initData]);
+            $publish_id = $initData['publish_id'] ?? null;
+            
+            $responses[] = $this->checkPublishStatus(
+                $publish_id,
+                $account
+            );
+
+            Log::info('TikTok Image Publish Success', [$responses]);
+
+            $this->cleanupTempFiles();
+
+            $currentStatus = $responses['data']['status'] ?? 'UNKNOWN';
+            if ($currentStatus == 'FAILED') {
+                // ERROR: Log the reason and fail the job
+                $reason = $responses['data']['fail_reason'] ?? 'Unknown error';
+                Log::error("TikTok Publish Failed: " . $reason);
+                throw new Exception("TikTok image publish failed: " . $reason);
+            }
+        }
+
+        /*
+        |----------------------------------------
+        |  VIDEO POSTS
+        |----------------------------------------
+        */
+        if (!empty($videos)) {
+            Log::info('videos--',[$videos]);
+            foreach ($videos as $videoPath) {
+
+                $initData = $this->initPost("video", $videoPath, $caption, $account);
+
+                $uploadUrl = $initData['upload_url'] ?? null;
+
+                $uploadId = null;
+
+                if ($uploadUrl) {
+                    $parts = parse_url($uploadUrl);
+                    parse_str($parts['query'], $query);
+                    $uploadId = $query['upload_id'] ?? null;
+                }
+
+                if (!$uploadId || !$uploadUrl) {
+                    throw new Exception("TikTok video init failed");
+                }
+
+                $this->uploadVideo($videoPath, $uploadUrl);
+
+                $responses[] = $this->publishPost(
+                    "video",
+                    $caption,
+                    $uploadId,
+                    [],
+                    $account
+                );
+            }
+        }
+
+        return $responses;
+    }
+
+    protected function initPost($mediaType, $mediaPaths, $captionData,$account)
+    {
+        if ($mediaType == 'PHOTO') {
+            $payload = [
+                "post_info" => [
+                    "title" => $captionData['title'],
+                    "description" => $captionData['description'],
+                    "privacy_level" => "SELF_ONLY",
+                    "auto_add_music" => true,
+                    "disable_comment" => true,
+                ],
+                "source_info" => [
+                    "source" => "PULL_FROM_URL",
+                    "photo_cover_index" => 0,
+                    "photo_images" => $mediaPaths
+                ],
+                "post_mode" => "DIRECT_POST",
+                "media_type" => "PHOTO"
+            ];
+
+            
+        } elseif ($mediaType == 'video') {
+            $videoPath = $mediaPaths;
+            Log::info('video path--'.$videoPath);
+            if (!file_exists($videoPath)) {
+                throw new Exception("Video file not found: $videoPath");
+            }
+
+            $videoSize = (int)filesize($videoPath);
+            $chunkSize = min($videoSize, 10 * 1024 * 1024); // 10MB max
+
+            $payload = [
+                "post_info" => [
+                    "title" => $captionData['description'],
+                    // "description" => $captionData['description'],
+                    "privacy_level" => "SELF_ONLY",
+                ],
+                "source_info" => [
+                    "source" => "FILE_UPLOAD",
+                    "video_size" => $videoSize,
+                    "chunk_size" => $chunkSize,
+                    "total_chunk_count" => (int) ceil($videoSize / $chunkSize),
+                ],
+                "post_mode" => "MEDIA_UPLOAD", 
+                "media_type" => $mediaType
+            ];
+            
+
+        }
+        Log::info('payload--', [$payload]);
+        $response = Http::withToken($account->access_token)
+            ->withHeaders([
+                'Content-Type' => 'application/json; charset=UTF-8',
+                'Accept' => 'application/json',
+            ])
+            ->post(
+                $mediaType == "PHOTO"
+                    ? 'https://open.tiktokapis.com/v2/post/publish/content/init/'
+                    : 'https://open.tiktokapis.com/v2/post/publish/video/init/',
+                $payload
+            );
+
+        if ($response->failed()) {
+            throw new Exception("tiktok init Error: " . $response->body());
+        }
+        $data = $response->json();
+        
+        Log::info("TikTok init response", $data);
+
+        return $data['data'] ?? [];
+    }
+
+    protected function uploadVideo($videoPath, $uploadUrl)
+    {
+        $videoBinary = file_get_contents($videoPath);
+        $videoSize = strlen($videoBinary);
+        
+        // For a single chunk, the range is 0 to (total - 1)
+        $rangeStart = 0;
+        $rangeEnd = $videoSize - 1;
+        $contentRange = "bytes {$rangeStart}-{$rangeEnd}/{$videoSize}";
+
+        Log::info("Uploading with Range: " . $contentRange);
+
+        $response = Http::withHeaders([
+            "Content-Type" => "video/mp4",
+            "Content-Length" => $videoSize,
+            "Content-Range" => $contentRange, // <--- REQUIRED for TikTok
+        ])->withBody($videoBinary, 'video/mp4')->put($uploadUrl);
+
+        Log::info("TikTok upload status: " . $response->status());
+
+        if ($response->failed()) {
+            throw new Exception("TikTok upload failed: " . $response->body() . " Status: " . $response->status());
+        }
+        return true;
+    }
+
+    protected function publishPost($mediaType, $caption, $uploadId = null, $mediaPaths = [],$account)
+    {
+        Log::info('upload ids--',[$uploadId]);
+        Log::info('media paths--',[$mediaPaths]);
+        $payload = [
+            "post_info" => [
+                "title" => $caption,
+                "privacy_level" => "SELF_ONLY"
+            ]
+        ];
+
+        if ($mediaType === 'video') {
+            $payload['source_info'] = [
+                "source" => "FILE_UPLOAD",
+                "upload_id" => $uploadId
+            ];
+            $url = 'https://open.tiktokapis.com/v2/post/publish/video/';
+            // $url = 'https://open.tiktokapis.com/v2/post/publish/video/complete/';
+        } else {
+            $payload['source_info'] = [
+                "source" => "PULL_FROM_URL",
+                "photo_cover_index" => 1,
+                "photo_images" => $mediaPaths
+            ];
+            $url = 'https://open.tiktokapis.com/v2/post/publish/content/';
+        }
+        Log::info('publish post payloads--',[$payload]);
+        $response = Http::withToken($account->access_token)
+            ->post($url, $payload);
+
+        $data = $response->json() ?? [];
+        Log::info("TikTok publish response", [$data]);
+
+        if ($response->successful() || $data == []) {
+            Log::info("TikTok Publish Success! Video is now processing.");
+            return $response->json() ?? ["status" => "success"];
+        }
+
+        if ($response->failed() || (isset($data['error']) && $data['error']['code'] !== 'ok')) {
+            throw new Exception("TikTok publish failed: " . ($response->body() ?: 'Unknown Error'));
+        }
+        return $data;
+    }
+
+
+    public function checkPublishStatus($publishId, $account)
+    {
+        $response = Http::withToken($account->access_token)
+            ->withHeaders([
+                'Content-Type' => 'application/json; charset=UTF-8',
+                'Accept' => 'application/json',
+            ])
+            ->post('https://open.tiktokapis.com/v2/post/publish/status/fetch/', [
+                "publish_id" => $publishId
+            ]);
+
+        return $response->json();
+    }
+
+    protected function convertToWebp($sourcePath)
+    {
+        $image = imagecreatefromstring(file_get_contents($sourcePath));
+        $filename = 'tiktok_' . uniqid() . '.webp';
+        $destination = storage_path('app/public/posts/temp/' . $filename);
+        
+        imagewebp($image, $destination, 80);
+        imagedestroy($image);
+
+        return [
+            'filename' => $filename,
+            'full_path' => $destination
+        ];
+    }
+
+    public function cleanupTempFiles()
+    {
+        $files = glob(storage_path('app/public/posts/temp/*'));
+        $now = time();
+        Log::info('Temp files cleaned');
+        foreach ($files as $file) {
+            // If file is older than 60 minutes
+            if ($now - filemtime($file) >= 3600) { 
+                unlink($file);
+            }
+        }
     }
 
     

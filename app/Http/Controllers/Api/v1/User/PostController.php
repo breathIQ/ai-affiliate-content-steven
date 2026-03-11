@@ -196,6 +196,11 @@ class PostController extends ResponseController
             ->where('chapters.id', $request->chapter_id)
             ->select('chapters.id', 'chapters.chapter', 'book_chapters.chapter_title as chapter_title')
             ->first();
+        
+        if (!$chapterName) {
+            $chapterName = Chapter::where('id', $request->chapter_id)->first();
+            
+        }
 
         return DB::transaction(function () use ($request,$user,$chapterName) {
 
