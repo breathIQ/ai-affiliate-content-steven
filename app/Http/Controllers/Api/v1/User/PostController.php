@@ -379,10 +379,25 @@ class PostController extends ResponseController
             // 3. Platforms (Publish Selection)
             if ($request->filled('platforms')) {
                 foreach ($request->platforms as $platform) {
+                    if($platform == 'tiktok') {
+                        $tiktok_payload = json_encode([
+                                'content_disclose' => $request->content_disclose,
+                                'brand_organic' => $request->brand_organic,
+                                'branded_content' => $request->branded_content,
+                                'allow_comment' => $request->allow_comment,
+                                'allow_duet' => $request->allow_duet,
+                                'allow_stitch' => $request->allow_stitch,
+                                'privacy_level' => $request->privacy_level,
+                            ]);
+                    }else{
+                        $tiktok_payload = null;
+                    }
+                    
                     PostPlatform::create([
                         'post_id' => $post->id,
                         'platform' => $platform,
-                        'status' => 'processing'   
+                        'status' => 'processing',
+                        'tiktok_payload' => $tiktok_payload
                     ]);
                 }
             }

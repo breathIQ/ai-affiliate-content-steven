@@ -13,7 +13,8 @@ class SocialAccount extends Model
         'username',
         'access_token',
         'refresh_token',
-        'token_expires_at'
+        'token_expires_at',
+        'creator_info'
     ];
 
     public function user()

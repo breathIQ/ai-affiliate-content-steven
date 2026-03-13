@@ -296,6 +296,7 @@ class UserAuthController extends ResponseController
                     'tiktok' => [
                         'connected' => (bool)$tiktok,
                         'username' => $tiktok ? $tiktok->username : null,
+                        'creator_info' => $tiktok ? json_decode($tiktok->creator_info) : null,
                     ]
                 ]
             ];

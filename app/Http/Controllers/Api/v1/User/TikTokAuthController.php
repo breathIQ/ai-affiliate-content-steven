@@ -78,7 +78,11 @@ class TikTokAuthController extends ResponseController
         ]);
         \Log::info('TikTok Auth User:', $userResponse->json());
         $user_data = $userResponse->json();
-
+        
+        //get creator info
+        $creatorInfo = $this->getCreatorInfo($data['access_token']);
+        \Log::info('TikTok Auth Creator Info:', [$creatorInfo]);
+        
         // Check if social account exists
         $social = SocialAccount::where([
             'provider' => 'tiktok',
@@ -93,6 +97,7 @@ class TikTokAuthController extends ResponseController
                 'access_token' => $data['access_token'],
                 'refresh_token' => $data['refresh_token'],
                 'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 0),
+                'creator_info' => json_encode($creatorInfo),
             ]);
         } else {
             // Try match by email
@@ -119,6 +124,7 @@ class TikTokAuthController extends ResponseController
                 'access_token' => $data['access_token'],
                 'refresh_token' => $data['refresh_token'],
                 'token_expires_at' => now()->addSeconds($data['expires_in'] ?? 0),
+                'creator_info' => json_encode($creatorInfo),
             ]);
         }
 
@@ -238,6 +244,10 @@ class TikTokAuthController extends ResponseController
         Log::info('TikTok link callback user info: ',[$userInfo]);
         $tiktokUser = $userInfo['data']['user'];
         $openId = $tiktokUser['open_id'];
+        
+        //get creator info
+        $creatorInfo = $this->getCreatorInfo($tokenResponse['access_token']);
+        Log::info('TikTok link callback creator info: ',[$creatorInfo]);
     
         $alreadyLinked = SocialAccount::where('provider', 'tiktok')
             ->where('provider_user_id', $openId)
@@ -264,6 +274,7 @@ class TikTokAuthController extends ResponseController
                 'access_token' => $tokenResponse['access_token'],
                 'refresh_token' => $tokenResponse['refresh_token'],
                 'token_expires_at' => now()->addSeconds($tokenResponse['expires_in'] ?? 0),
+                'creator_info' => json_encode($creatorInfo),
             ]
         );
         
@@ -274,6 +285,36 @@ class TikTokAuthController extends ResponseController
         $jsonData = urlencode(json_encode($linkResponse));
         $frontendUrl = Config::get('constant.frontend_url').'/u/dashboard?linkResponse=' . $jsonData;
         return redirect()->away($frontendUrl);
+    }
+    
+    private function getCreatorInfo($access_token)
+    {
+        $curl = curl_init();
+
+        curl_setopt_array($curl, array(
+        CURLOPT_URL => 'https://open.tiktokapis.com/v2/post/publish/creator_info/query/',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_ENCODING => '',
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_TIMEOUT => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS =>'{}',
+        CURLOPT_HTTPHEADER => array(
+            'Authorization: Bearer ' . $access_token,
+            'Content-Type: application/json'
+        ),
+        ));
+
+        $response = curl_exec($curl);
+
+        curl_close($curl);
+        $data = json_decode($response, true);
+
+        // dd($data['data']);
+
+        return $data['data'];
     }
 
 

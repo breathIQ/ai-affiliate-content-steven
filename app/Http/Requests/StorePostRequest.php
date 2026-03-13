@@ -66,6 +66,14 @@ class StorePostRequest extends FormRequest
 
             'platforms' => 'required|array',
             'platforms.*' => 'in:instagram,tiktok',
+            
+            'content_disclose' => 'required_if:platform,tiktok',
+            'brand_organic' => 'required_if:platform,tiktok',
+            'branded_content' => 'required_if:platform,tiktok',
+            'allow_comment' => 'required_if:platform,tiktok',
+            'allow_duet' => 'required_if:platform,tiktok',
+            'allow_stitch' => 'required_if:platform,tiktok',
+            'privacy_level' => 'required_if:platform,tiktok',
 
             // 'affiliate_url' => 'required|string',
         ];

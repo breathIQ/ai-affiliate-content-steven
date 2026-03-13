@@ -64,7 +64,7 @@ class PublishPostToSocialMedia implements ShouldQueue
                 } elseif ($platform === 'tiktok') {
                     \Log::info("Publishing to TikTok for Post {$this->post->id}");
                     //$this->publishToTikTok($account);
-                    $this->tiktokPublish($account);
+                    $this->tiktokPublish($account,$platformRecord->tiktok_payload);
                 }
 
                 $platformRecord->update(['status' => 'published','published_at' => now()]);
@@ -515,8 +515,9 @@ class PublishPostToSocialMedia implements ShouldQueue
     
      //**************************Tiktok publishing code********************************************* */
 
-    private function tiktokPublish($account)
+    private function tiktokPublish($account,$tiktokPayload)
     {
+        $tiktokPayload = json_decode($tiktokPayload ?? '');
         $mediaItems = $this->post->media()->orderBy('media_order')->get();
 
         $images = [];
@@ -553,7 +554,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         if (!empty($images)) {
             // $images = ["https://co2body.com/storage/posts/media/nature.webp","https://co2body.com/storage/posts/media/tree.webp"];
             Log::info('images--',[$images]);
-            $initData = $this->initPost("PHOTO", $images, $caption, $account);
+            $initData = $this->initPost("PHOTO", $images, $caption, $account,$tiktokPayload);
 
             Log::info('TikTok Image Init Success', [$initData]);
             $publish_id = $initData['publish_id'] ?? null;
@@ -585,7 +586,7 @@ class PublishPostToSocialMedia implements ShouldQueue
             Log::info('videos--',[$videos]);
             foreach ($videos as $videoPath) {
 
-                $initData = $this->initPost("video", $videoPath, $caption, $account);
+                $initData = $this->initPost("video", $videoPath, $caption, $account,$tiktokPayload);
 
                 $uploadUrl = $initData['upload_url'] ?? null;
 
@@ -608,7 +609,8 @@ class PublishPostToSocialMedia implements ShouldQueue
                     $caption,
                     $uploadId,
                     [],
-                    $account
+                    $account,
+                    $tiktokPayload
                 );
             }
         }
@@ -616,16 +618,18 @@ class PublishPostToSocialMedia implements ShouldQueue
         return $responses;
     }
 
-    protected function initPost($mediaType, $mediaPaths, $captionData,$account)
+    protected function initPost($mediaType, $mediaPaths, $captionData,$account,$tiktokPayload)
     {
         if ($mediaType == 'PHOTO') {
             $payload = [
                 "post_info" => [
                     "title" => $captionData['title'],
                     "description" => $captionData['description'],
-                    "privacy_level" => "SELF_ONLY",
+                    "privacy_level" => $tiktokPayload->privacy_level ?? "SELF_ONLY",
                     "auto_add_music" => true,
-                    "disable_comment" => true,
+                    "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "brand_content_toggle" => filter_var($tiktokPayload->branded_content ?? false, FILTER_VALIDATE_BOOLEAN),
+                    "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? true, FILTER_VALIDATE_BOOLEAN),
                 ],
                 "source_info" => [
                     "source" => "PULL_FROM_URL",
@@ -651,7 +655,12 @@ class PublishPostToSocialMedia implements ShouldQueue
                 "post_info" => [
                     "title" => $captionData['description'],
                     // "description" => $captionData['description'],
-                    "privacy_level" => "SELF_ONLY",
+                    "privacy_level" => $tiktokPayload->privacy_level ?? "SELF_ONLY",
+                    "disable_duet" => !filter_var($tiktokPayload->allow_duet ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "disable_stitch" => !filter_var($tiktokPayload->allow_stitch ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "brand_content_toggle" => filter_var($tiktokPayload->branded_content ?? false, FILTER_VALIDATE_BOOLEAN),
+                    "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? true, FILTER_VALIDATE_BOOLEAN),
                 ],
                 "source_info" => [
                     "source" => "FILE_UPLOAD",
@@ -714,14 +723,19 @@ class PublishPostToSocialMedia implements ShouldQueue
         return true;
     }
 
-    protected function publishPost($mediaType, $caption, $uploadId = null, $mediaPaths = [],$account)
+    protected function publishPost($mediaType, $caption, $uploadId = null, $mediaPaths = [],$account,$tiktokPayload)
     {
         Log::info('upload ids--',[$uploadId]);
         Log::info('media paths--',[$mediaPaths]);
         $payload = [
             "post_info" => [
-                "title" => $caption,
-                "privacy_level" => "SELF_ONLY"
+                "title" => $caption['description'],
+                "privacy_level" => $tiktokPayload->privacy_level ?? "SELF_ONLY",
+                "disable_duet" => !filter_var($tiktokPayload->allow_duet ?? true, FILTER_VALIDATE_BOOLEAN),
+                "disable_stitch" => !filter_var($tiktokPayload->allow_stitch ?? true, FILTER_VALIDATE_BOOLEAN),
+                "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? true, FILTER_VALIDATE_BOOLEAN),
+                "brand_content_toggle" => filter_var($tiktokPayload->branded_content ?? false, FILTER_VALIDATE_BOOLEAN),
+                "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? true, FILTER_VALIDATE_BOOLEAN),
             ]
         ];
 
@@ -735,7 +749,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         } else {
             $payload['source_info'] = [
                 "source" => "PULL_FROM_URL",
-                "photo_cover_index" => 1,
+                "photo_cover_index" => 0,
                 "photo_images" => $mediaPaths
             ];
             $url = 'https://open.tiktokapis.com/v2/post/publish/content/';
