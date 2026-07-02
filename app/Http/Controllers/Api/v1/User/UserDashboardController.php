@@ -128,7 +128,8 @@ class UserDashboardController extends ResponseController
                         'ai_generated' => true, 
                         'ai_model' => $post->ai_model,
                         'status' => $post->status,
-                        'created_at' => $post->created_at->format('M d, Y')
+                        'created_at' => $post->created_at->format('M d, Y'),
+                        'published_at' => $post->published_at
                     ];
                 });
 

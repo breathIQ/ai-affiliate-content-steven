@@ -116,7 +116,7 @@ Route::group(['prefix' => 'v1/user'], function () {
 
 
         //*****************Ai Post Generation************************** */
-        Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent']);
+        Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent'])->middleware('throttle:10,1'); // Limit to 10 requests per minute;
 
         //**************Auth functionaity route**************************** */
         Route::post('logout', [UserAuthController::class, 'logout']);

@@ -106,6 +106,8 @@ class PublishPostToSocialMedia implements ShouldQueue
     {
         \Log::info("Instagram account details: ". $account);
         $mediaItems = $this->post->media()->orderBy('media_order')->get();
+        
+        sleep(2);
        
         $token = $account->access_token;
         $igId = $account->provider_user_id ;
@@ -627,9 +629,9 @@ class PublishPostToSocialMedia implements ShouldQueue
                     "description" => $captionData['description'],
                     "privacy_level" => $tiktokPayload->privacy_level ?? "SELF_ONLY",
                     "auto_add_music" => true,
-                    "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? false, FILTER_VALIDATE_BOOLEAN),
                     "brand_content_toggle" => filter_var($tiktokPayload->branded_content ?? false, FILTER_VALIDATE_BOOLEAN),
-                    "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? false, FILTER_VALIDATE_BOOLEAN),
                 ],
                 "source_info" => [
                     "source" => "PULL_FROM_URL",
@@ -656,11 +658,11 @@ class PublishPostToSocialMedia implements ShouldQueue
                     "title" => $captionData['description'],
                     // "description" => $captionData['description'],
                     "privacy_level" => $tiktokPayload->privacy_level ?? "SELF_ONLY",
-                    "disable_duet" => !filter_var($tiktokPayload->allow_duet ?? true, FILTER_VALIDATE_BOOLEAN),
-                    "disable_stitch" => !filter_var($tiktokPayload->allow_stitch ?? true, FILTER_VALIDATE_BOOLEAN),
-                    "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "disable_duet" => !filter_var($tiktokPayload->allow_duet ?? false, FILTER_VALIDATE_BOOLEAN),
+                    "disable_stitch" => !filter_var($tiktokPayload->allow_stitch ?? false, FILTER_VALIDATE_BOOLEAN),
+                    "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? false, FILTER_VALIDATE_BOOLEAN),
                     "brand_content_toggle" => filter_var($tiktokPayload->branded_content ?? false, FILTER_VALIDATE_BOOLEAN),
-                    "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? true, FILTER_VALIDATE_BOOLEAN),
+                    "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? false, FILTER_VALIDATE_BOOLEAN),
                 ],
                 "source_info" => [
                     "source" => "FILE_UPLOAD",
@@ -731,11 +733,11 @@ class PublishPostToSocialMedia implements ShouldQueue
             "post_info" => [
                 "title" => $caption['description'],
                 "privacy_level" => $tiktokPayload->privacy_level ?? "SELF_ONLY",
-                "disable_duet" => !filter_var($tiktokPayload->allow_duet ?? true, FILTER_VALIDATE_BOOLEAN),
-                "disable_stitch" => !filter_var($tiktokPayload->allow_stitch ?? true, FILTER_VALIDATE_BOOLEAN),
-                "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? true, FILTER_VALIDATE_BOOLEAN),
+                "disable_duet" => !filter_var($tiktokPayload->allow_duet ?? false, FILTER_VALIDATE_BOOLEAN),
+                "disable_stitch" => !filter_var($tiktokPayload->allow_stitch ?? false, FILTER_VALIDATE_BOOLEAN),
+                "disable_comment" => !filter_var($tiktokPayload->allow_comment ?? false, FILTER_VALIDATE_BOOLEAN),
                 "brand_content_toggle" => filter_var($tiktokPayload->branded_content ?? false, FILTER_VALIDATE_BOOLEAN),
-                "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? true, FILTER_VALIDATE_BOOLEAN),
+                "brand_organic_toggle" => filter_var($tiktokPayload->brand_organic ?? false, FILTER_VALIDATE_BOOLEAN),
             ]
         ];
 

@@ -405,7 +405,7 @@ class PostController extends ResponseController
             // Dispatch the Job to the background
             PublishPostToSocialMedia::dispatch($post);
             
-            return $this->sendResponse($post, 'Post created successfully and publishing is in progress', 201);
+            return $this->sendResponse($post, 'Your content is being processed and may take a few minutes to appear on your profile.', 201);
             
         });
     }

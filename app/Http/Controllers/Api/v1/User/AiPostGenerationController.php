@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Storage;
 use OpenAI\Exceptions\ErrorException;
 use CURLFile;
 use Auth;
+use Intervention\Image\Laravel\Facades\Image;
 
 
 class AiPostGenerationController extends ResponseController
@@ -27,7 +28,7 @@ class AiPostGenerationController extends ResponseController
         $validator = Validator::make($request->all(), [
             'chapter' => 'required|exists:chapters,id',
             'model'   => 'required|string', // e.g., 'gpt-4-turbo', 'claude-3-haiku-20240307'
-            'prompt'  => 'required|string',
+            'prompt'  => 'nullable|string',
 
              // new fields
             'post_type' => 'required|in:carousel,single',
@@ -69,9 +70,9 @@ class AiPostGenerationController extends ResponseController
         $finalPrompt = "Task: {$userPrompt}";
 
         if (str_contains($modelChoice, 'gpt')) {
-            return $this->generateWithOpenAI($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+            return $this->generateWithOpenAI('gpt-5.4-mini', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
         } elseif (str_contains($modelChoice, 'claude')) {
-            return $this->generateWithClaude($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+            return $this->generateWithClaude('claude-haiku-4-5', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
         }else{
             return $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
         }
@@ -103,6 +104,7 @@ class AiPostGenerationController extends ResponseController
             }
             // dd($rawContent);
             $structuredData = json_decode($rawContent, true);
+            
             if (is_null($structuredData)) {
                 // Agar JSON invalid hai toh manually handle karein ya error dein
                 throw new \Exception("Invalid JSON format received from AI.");
@@ -110,12 +112,13 @@ class AiPostGenerationController extends ResponseController
             // dd($structuredData);
             /** ------------------ IMAGE GENERATION ------------------ */
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat, $structuredData['summary']);
 
             /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
                 'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'],
+                'summary' => $structuredData['summary'],
                 // 'script' => $structuredData['script'],
                 'title' => $structuredData['title'],
                 'model' => 'ChatGPT', //$model,
@@ -128,13 +131,13 @@ class AiPostGenerationController extends ResponseController
                 'ai_prompt' => $prompt,
                 // 'generated_image' => $imageUrl,
             ], 'Content generated successfully', 200);
-        } catch (ErrorException $e) {
+        } catch (\Throwable $e) {
             // return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
             if (str_contains($e->getMessage(), 'rate limit')) {
                 sleep(2); // wait before retry
             }
 
-            return $this->sendError('Error generating content chatgpt', ['error' => $e->getMessage()], 500);
+            return $this->sendError('Error generating content chatgpt due to ' . $e->getMessage(), ['error' => $e->getMessage()], 500);
         }
     }
 
@@ -157,7 +160,6 @@ class AiPostGenerationController extends ResponseController
                     ['role' => 'user', 'content' => $prompt]
                 ],
             ]);
-
            
             // 1. Check for API Errors (like 401, 400, 500)
             if ($response->failed()) {
@@ -174,7 +176,12 @@ class AiPostGenerationController extends ResponseController
             }
 
             $rawContent = $resData['content'][0]['text'];
-            $structuredData = json_decode($rawContent, true);
+            
+            // Remove ```json ... ``` wrapper
+            $cleanContent = preg_replace('/^```json\s*|\s*```$/', '', trim($rawContent));
+
+            // Decode JSON
+            $structuredData = json_decode($cleanContent, true);
             // dd($structuredData);
             if (is_null($structuredData)) {
                 throw new \Exception("Invalid JSON format received from AI.");
@@ -182,12 +189,13 @@ class AiPostGenerationController extends ResponseController
 
             // --- NEW: Image Generation --- 
             // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat, $structuredData['summary']);
 
             // 3. Send successful response to React
             return $this->sendResponse([
                 'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'] ?? '',
+                'summary' => $structuredData['summary'] ?? '',
                 // 'script' => $structuredData['script'] ?? '',
                 'title' => $structuredData['title'] ?? '',
                 'model' => 'Claude', //$model,  
@@ -200,7 +208,7 @@ class AiPostGenerationController extends ResponseController
                 'ai_prompt' => $prompt,
             ], 'Content generated successfully', 200);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return $this->sendError('Error generating content claude', ['error' => $e->getMessage()], 500);
         }
     }
@@ -216,7 +224,7 @@ class AiPostGenerationController extends ResponseController
                 'x-goog-api-key' => $apiKey,
                 'Content-Type'  => 'application/json',
             ])->post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent',
                 [
                     'system_instruction' => [
                         'parts' => [
@@ -282,11 +290,12 @@ class AiPostGenerationController extends ResponseController
                 throw new \Exception("Invalid JSON format received from Gemini.Try again");
             }
             // dd($response->json(),$text,$data,$data['title'],$data['hashtags'],$data['script'],$data['caption']);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat,$data['summary']);
         
             return $this->sendResponse([
                 'caption' => $data['title'] . PHP_EOL . $data['caption'],
                 'hashtags' => $data['hashtags'],
+                'summary' => $data['summary'],
                 // 'script' => $data['script'],
                 'title' => $data['title'],
                 'model' => 'Gemini', //$model,  
@@ -299,7 +308,7 @@ class AiPostGenerationController extends ResponseController
                 'ai_prompt' => $prompt,
             ], 'Content generated successfully', 200);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             \Log::error('Gemini Exception: ' . $e->getMessage());
             \Log::error($e->getTraceAsString());
             return $this->sendError('Error generating content gemini', ['error' => $e->getMessage()], 500);
@@ -368,9 +377,9 @@ class AiPostGenerationController extends ResponseController
                     "Authorization: Bearer {$apiKey}"
                 ],
                 CURLOPT_POSTFIELDS => [
-                    "model" => "gpt-image-1.5",//"gpt-image-1",
+                    "model" => "gpt-image-2",//"gpt-image-1.5",
                     "prompt" => $prompt,
-                    "image" => new CURLFile($imagePath, "image/png"),
+                    "image" => new CURLFile($imagePath, mime_content_type($imagePath)),
                     "size" => "1024x1536", 
                     "quality" => "low",
                 ]
@@ -434,7 +443,7 @@ class AiPostGenerationController extends ResponseController
         
     }
 
-    private function buildSlideImagePrompt($chapter, $design,$textFormat)
+    private function buildSlideImagePrompt($chapter, $design,$textFormat, $summary=null)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         $affiliate_id = Auth::user()->affiliate_id;
@@ -447,10 +456,49 @@ class AiPostGenerationController extends ResponseController
             Mood: {$design['visual_mood']}
             Audience tone: {$design['human_presence']}
             Angle: {$design['content_angle']}
-          
-
+            
             CONTENT SECTION:
-            - On a clean, semi-transparent overlay or clear negative space, include {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}.
+            TEXT ACCURACY IS HIGHEST PRIORITY.
+            
+            On a clean semi-transparent overlay or clear negative space, include {$textFormat} as a SHORT Instagram-friendly educational micro-summary generated STRICTLY from this chapter summary:
+            {$summary}
+            
+            STRICT CONTENT RULES:
+            Extract only the most important ideas from the summary.
+            Maximum 35-50 words total.
+            Use 3-5 short readable lines only.
+            Use simple common English words.
+            Every sentence must be complete and meaningful.
+            No long explanations.
+            No filler text.
+            No technical overload.
+            No hashtags.
+            No special symbols.
+            No decorative characters.
+            No broken words.
+            No incomplete sentences.
+            No meaningless text.
+            No random letters.
+            No gibberish text.
+            No merged words.
+            No distorted typography.
+            
+            TYPOGRAPHY RULES:
+            Clean modern sans-serif typography.
+            Large readable text only.
+            Perfect spelling required.
+            Even line spacing.
+            Strong contrast against background.
+            No overlapping elements.
+            No warped or curved text.
+            No ultra-thin fonts.
+            
+            LAYOUT RULES:
+            Center-aligned composition.
+            Maintain generous empty spacing around text.
+            Keep all text strictly inside safe readable zones.
+            Prioritize readability over adding more text.
+            If space becomes limited, reduce text amount instead of reducing readability.
 
             THUMBNAIL ELEMENT:
             In the bottom-right corner, place the EXACT provided book cover image from {$imagePath} as a static thumbnail.
@@ -480,14 +528,14 @@ class AiPostGenerationController extends ResponseController
          return ['prompt'=>$prompt,'imagepath'=>$imagePath];
     }
 
-    private function getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat)
+    private function getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat,$summary=null)
     {
         // dd($design);
         $images = [];
         if($model === 'gemini'){
-            $imagePrompt = $this->buildGeminiImagePrompt($chapter,$design,$textFormat);
+            $imagePrompt = $this->buildGeminiImagePrompt($chapter,$design,$textFormat, $summary);
         }else{
-            $imagePrompt = $this->buildSlideImagePrompt($chapter,$design,$textFormat);    
+            $imagePrompt = $this->buildSlideImagePrompt($chapter,$design,$textFormat, $summary);    
         }   
        
         set_time_limit(900);   
@@ -568,10 +616,8 @@ class AiPostGenerationController extends ResponseController
         $apiKey = Config::get('constant.gemini_keys.key');
         $response = null;
         $models = [
-            'gemini-2.5-flash-image',
-            'gemini-3-pro-image-preview'
-            
-            
+            'gemini-3.1-flash-image-preview',
+            // 'gemini-2.5-flash-image'
         ];
         foreach ($models as $model) {
             try{
@@ -580,30 +626,33 @@ class AiPostGenerationController extends ResponseController
                 $response = Http::timeout(300)
                      ->connectTimeout(60)
                     ->withHeaders([
+                        'x-goog-api-key' => $apiKey,
                         'Content-Type' => 'application/json',
                     ])
                     ->post(
-                        "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+                        "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent",
                         [
                             "contents" => [
-                                ["parts" => [
-                                    [
-                                        "inline_data" => [
-                                            "mime_type" => "image/png",
-                                            "data" => $imagepath,
-                                        ]
-                                    ],
-                                    ["text" => $prompt]
-                                    
+                                [
+                                    "parts" => [
+                                        [
+                                            "inline_data" => [
+                                                "mime_type" => "image/png",
+                                                "data" => $imagepath,
+                                            ]
+                                        ],
+                                        ["text" => $prompt] 
                                     ]
                                 
                                 ]
                             ],
                             "generationConfig" => [
+                                "responseModalities" => ["IMAGE"],
                                 "imageConfig" => [
                                     "aspectRatio" => "4:5",
-                                    "imageSize" => "SD",
-                                ]
+                                    "imageSize" => "1K",
+                                ],
+                                // "temperature" => 1.0
                             ]
                         ]
                     );
@@ -652,7 +701,7 @@ class AiPostGenerationController extends ResponseController
                     // return $dataUrl;
                     
                     $imageData = base64_decode($base64);
-            
+
                     // Generate a unique filename and save to your public disk
                     $fileName = 'posts/temp/gai_' . uniqid() . '.jpg';
                     Storage::disk('public')->put($fileName, $imageData);
@@ -708,7 +757,7 @@ class AiPostGenerationController extends ResponseController
         
     }
     
-    private function buildGeminiImagePrompt($chapter,$design,$textFormat)
+    private function buildGeminiImagePrompt($chapter,$design,$textFormat, $summary=null)
     {
         
         $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
@@ -758,7 +807,297 @@ class AiPostGenerationController extends ResponseController
 
         //         Ensure balanced composition and high clarity suitable for Instagram viewing without losing any important content.";
                 
-        $prompt = "Create a clean, professional medical infographic image optimized for Instagram portrait posts.
+        // $prompt = "Create a clean, professional medical infographic image optimized for Instagram portrait posts.
+
+        //     STRICT TEXT RULES:
+        //     All text must be written only in correct English.
+        //     No random symbols, characters, or distorted letters.
+        //     No misspellings.
+        //     Use clean professional typography.
+        //     Text must be perfectly readable and evenly spaced.
+            
+        //     CANVAS:
+        //     Portrait layout 1080 × 1350 px (4:5).
+        //     Maintain a safe margin on all sides.
+        //     No content may touch edges.
+            
+        //     LAYOUT GRID (MANDATORY):
+        //     Divide layout into zones:
+            
+        //     ZONE 1 — HEADER (Top 20%)
+        //     Title: 'The Carbonated Body'
+            
+        //     ZONE 2 — SUBTITLE (Below header)
+        //     '{$chapter->chapter}: {$chapter->chapter_title}'
+            
+        //     ZONE 3 — VISUAL ILLUSTRATION (Upper middle)
+        //     Semi-transparent illustration highlighting {$chapter->chapter_title}.
+        //     Illustration must contain NO text.
+            
+        //     ZONE 4 — TEXT PANEL (Center area)
+        //     {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+            
+        //     Formatting rules:
+        //     bullet points or short lines
+        //     evenly spaced
+        //     no overlap
+        //     centered composition
+            
+        //     ZONE 5 — RESERVED THUMBNAIL AREA (BOTTOM LEFT CORNER ONLY)
+        //     STRICT POSITIONING RULES:
+        //     Reserve a blank empty rectangle in the bottom-left corner.
+        //     This space must contain NO text, NO illustrations, NO graphics.
+        //     Place the provided cover image ONLY inside this reserved rectangle.
+        //     The thumbnail must NEVER overlap any text or visual elements.
+        //     Scale the thumbnail proportionally so it fits entirely inside its reserved corner space.
+        //     Maintain padding around it.
+            
+        //     ZONE 6 — FOOTER (Bottom center)
+        //     Centered URL:
+        //     https://co2body.com/{$affiliate_id}
+            
+        //     Footer rules:
+        //     Must not overlap thumbnail
+        //     Must remain horizontally centered
+        //     Must stay above bottom margin
+        //     Small but clearly readable font
+            
+        //     VISUAL STYLE:
+        //     Style: {$design['image_style']}
+        //     Mood: {$design['visual_mood']}
+        //     Tone: {$design['human_presence']}
+        //     Angle: {$design['content_angle']}
+            
+        //     FINAL COMPOSITION RULES:
+        //     Balanced layout
+        //     Clean infographic design
+        //     Clear spacing between sections
+        //     No element overlaps another
+        //     No crowding
+        //     No clutter
+        //     Maintain visual hierarchy
+        //     Ensure every element stays inside its assigned zone
+            
+        //     If any element overlaps, regenerate until layout is clean and properly spaced.";
+        
+        // $prompt = "Create a clean, professional medical infographic optimized for Instagram (4:5).
+
+        //     *** CRITICAL INSTRUCTION FOR TEXT RENDERING ***
+        //     You are an infographic engine. DO NOT render the names of the zones (e.g., do not print 'ZONE 1', 'HEADER', 'CANVAS', etc.) on the image. Only render the text found inside the <PrintText> tags or the generated bullet points.
+            
+        //     <STRICT_TEXT_RULES>
+        //         TEXT ACCURACY IS HIGHEST PRIORITY.
+    
+        //         - Language: Correct English only.
+        //         - Every visible word must be correctly spelled.
+        //         - No random symbols.
+        //         - No distorted characters.
+        //         - No broken letters.
+        //         - No merged words.
+        //         - No gibberish text.
+        //         - No incomplete words.
+        //         - No meaningless words.
+        //         - No fake medical terms.
+        //         - No repeated letters accidentally.
+        //         - No decorative text.
+        //         - Render ONLY intentional readable content.
+                
+        //         TYPOGRAPHY RULES:
+        //         - Use clean modern sans-serif typography.
+        //         - Perfect readability is mandatory.
+        //         - Maintain even spacing between letters and lines.
+        //         - Use large readable text only.
+        //         - Avoid ultra-thin fonts.
+        //         - Avoid artistic or stylized fonts.
+        //         - Avoid warped or curved text.
+        //         - Avoid overlapping text.
+                
+        //         FAILSAFE:
+        //         If readability becomes difficult, reduce text amount instead of generating corrupted text.
+        //     </STRICT_TEXT_RULES>
+            
+        //     <CANVAS_LAYOUT>
+        //     - Dimensions: 1080 × 1350 px.
+        //     - Margins: Maintain a safe internal margin; no elements should touch the extreme edges.
+        //     </CANVAS_LAYOUT>
+            
+        //     <PLACEMENT_GRID>
+        //         <SECTION_TOP_20>
+        //             Position as Header:
+        //             <PrintText>'The Carbonated Body'</PrintText>
+                    
+        //             Position as Subtitle:
+        //             <PrintText>'{$chapter->chapter}: {$chapter->chapter_title}'</PrintText>
+        //         </SECTION_TOP_20>
+            
+        //         <SECTION_VISUAL_MIDDLE_UPPER>
+        //             Illustration Concept: A semi-transparent, hyper-realistic graphic highlighting '{$chapter->chapter_title}'.
+        //             Restriction: This illustration area must contain ZERO text characters.
+        //         </SECTION_VISUAL_MIDDLE_UPPER>
+            
+        //         <SECTION_CENTER_BODY>
+        //             Content Task:
+        //             Read the provided chapter summary carefully and create {$textFormat} as a SHORT Instagram-friendly educational micro-summary regarding '{$chapter->chapter_title}'.
+                    
+        //             STRICT LENGTH RULE:
+        //             - Generate ONLY 35-50 words total.
+        //             - Never exceed 50 words.
+        //             - Use only 3-5 short lines.
+        //             - Prioritize minimal Instagram-style text density.
+        //             - If needed, shorten aggressively before rendering.
+                    
+        //             STRICT CONTENT RULES:
+        //             - STRICTLY use the provided summary only.
+        //             - Extract only the most important ideas.
+        //             - Rewrite into short simple educational sentences.
+        //             - Use only simple common English words.
+        //             - Every sentence must be complete and meaningful.
+        //             - No long explanations.
+        //             - No filler text.
+        //             - No technical overload.
+        //             - No special symbols.
+        //             - No hashtags.
+        //             - No broken words.
+        //             - No cut-off sentences.
+        //             - No meaningless text.
+        //             - Keep the content visually clean and highly readable.
+                    
+        //             SOURCE SUMMARY:
+        //             {$summary}
+                
+        //             Formatting:
+        //             - Center-aligned composition.
+        //             - Large readable typography.
+        //             - Balanced line spacing.
+        //             - Clean visual hierarchy.
+        //             - Keep enough empty space around text.
+        //             - Ensure text occupies only the center body region without clutter.
+        //         </SECTION_CENTER_BODY>
+            
+        //         <SECTION_BOTTOM_LEFT_THUMBNAIL>
+        //             STRICT POSITIONING:
+        //             Reserve a clean, empty rectangular space in the BOTTOM-LEFT CORNER ONLY.
+                    
+        //             THUMBNAIL RULES:
+        //             Use the provided book cover image EXACTLY AS PROVIDED.
+        //             DO NOT redesign, restyle, recreate, repaint, modify, enhance, crop, or reinterpret the cover image in any way.
+        //             Maintain the original colors, typography, layout, proportions, and artwork.
+                    
+        //             PLACEMENT:
+        //             Place the original cover image only inside the reserved thumbnail area.
+        //             Scale it proportionally to fit completely within the space.
+        //             Maintain proper padding on all sides.
+        //             Ensure the thumbnail does not overlap or touch any text, graphics, or footer elements.
+        //         </SECTION_BOTTOM_LEFT_THUMBNAIL>
+            
+        //         <SECTION_FOOTER_BOTTOM_CENTER>
+        //             URL to print: https://co2body.com/{$affiliate_id}
+        //             Style: Small, centered, readable font. Must remain horizontally centered and not overlap the thumbnail.
+        //         </SECTION_FOOTER_BOTTOM_CENTER>
+        //     </PLACEMENT_GRID>
+            
+        //     <VISUAL_AESTHETICS>
+        //     - Style: {$design['image_style']}
+        //     - Mood: {$design['visual_mood']}
+        //     - Human Presence: {$design['human_presence']}
+        //     - Perspective: {$design['content_angle']}
+        //     </VISUAL_AESTHETICS>
+            
+        //     <FINAL_COMPOSITION_LOGIC>
+        //     Balance the visual weight of the image. Maintain a clear hierarchy. If any element (text or image) overlaps another, adjust the layout to ensure a clean, medical-grade aesthetic. No crowding. No clutter.
+        //     </FINAL_COMPOSITION_LOGIC>";
+        
+        // $prompt = "Create a dark, dramatic, professional book chapter feature image optimized for Instagram portrait posts.
+
+        //     STRICT TEXT RULES:
+        //     All text must be written only in correct English.
+        //     No random symbols, characters, or distorted letters.
+        //     No misspellings.
+        //     Use clean professional typography.
+        //     Text must be perfectly readable and evenly spaced.
+        //     Do NOT render any layout labels, section names, zone numbers, or instruction text in the image.
+        //     Only render the exact content text values listed in the PERMITTED TEXT section below.
+            
+        //     CANVAS:
+        //     Portrait layout 1080 × 1350 px (4:5).
+        //     Choose a deep, dark, rich background color that best suits the mood and theme of the chapter content.
+        //     The chosen background color must be applied consistently across the entire canvas from edge to edge.
+        //     Maintain a safe margin on all sides.
+        //     No content may touch edges.
+            
+        //     ---
+            
+        //     PERMITTED TEXT IN IMAGE (Only these exact texts may appear — nothing else):
+        //     1. 'The Carbonated Body'
+        //     2. '{$chapter->chapter}: {$chapter->chapter_title}'
+        //     3. A 35 to 50 word description generated from the chapter summary
+        //     4. 'https://co2body.com/{$affiliate_id}'
+            
+        //     NO other text, label, heading, number, instruction word, or any other word may appear anywhere in the image.
+            
+        //     ---
+            
+        //     LAYOUT STRUCTURE (Top to Bottom):
+            
+        //     [TOP AREA — Title, 15% of canvas]
+        //     Large dominant title text at the very top.
+        //     Render only: 'The Carbonated Body'
+        //     Style: Very large bold serif or display font, pure white (#FFFFFF), centered.
+        //     Font size must be the largest text on the entire canvas.
+        //     Below the title draw a thin horizontal golden or amber glowing divider line spanning 60% of canvas width, centered.
+            
+        //     [UPPER MIDDLE — Chapter heading, 8% of canvas]
+        //     Render only: '{$chapter->chapter}: {$chapter->chapter_title}'
+        //     Style: Bold, golden-amber color (#F5A623), centered, medium-large font.
+        //     No background, sits directly on the canvas background.
+            
+        //     [MAIN VISUAL — Large illustration, 45% of canvas]
+        //     A large, dramatic, high quality digital art illustration representing the themes from this summary: '{$chapter->chapter_summary}'
+        //     Style: {$design['image_style']}
+        //     Mood: {$design['visual_mood']}
+        //     Tone: {$design['human_presence']}
+        //     Angle: {$design['content_angle']}
+        //     The illustration lighting and color palette must blend naturally and harmoniously into the chosen background color.
+        //     The illustration must blend seamlessly into the background with soft edges — no hard borders or white halos.
+        //     This illustration must contain absolutely NO text, NO words, NO letters of any kind.
+            
+        //     [BOTTOM AREA — Two elements side by side, 25% of canvas]
+            
+        //     LEFT SIDE (35% of canvas width, bottom-right corner):
+        //     Place the provided book cover image here exactly as it is.
+        //     Do NOT redesign, recolor, filter, alter, or redraw the book cover in any way.
+        //     The book cover must appear 100% pixel-identical to the original source image.
+        //     Add only a soft subtle glow or drop shadow around it to help it stand out from the background.
+        //     The book cover must be fully visible and not cropped.
+            
+        //     RIGHT SIDE (55% of canvas width):
+        //     A semi-transparent rounded rectangle card.
+        //     Card background: A slightly lighter or darker shade of the canvas background color with soft opacity and subtle border glow.
+        //     Inside this card render a short description of exactly 35 to 50 words.
+        //     Generated from this chapter summary: '{$summary}'
+        //     Style: Flowing prose, no bullet points, white or very light text, 18-20px, relaxed line height, centered alignment.
+        //     The card must NOT overlap the book cover on the right.
+            
+        //     [FOOTER — Bottom 7% of canvas]
+        //     No background change — sits directly on the canvas background.
+        //     Render only: 'https://co2body.com/{$affiliate_id}'
+        //     Style: White or light colored, small but clearly readable font, centered horizontally.
+        //     Must not overlap the book cover or the text card above it.
+            
+        //     ---
+            
+        //     ABSOLUTE RULES:
+        //     Never render zone names, area labels, numbers, or any instruction text in the image.
+        //     Never alter the book cover — it must look exactly as provided.
+        //     No element may overlap another element.
+        //     The URL in the footer must be fully visible and readable.
+        //     The illustration colors and lighting must harmonize with the chosen background.
+        //     Clean layout, strong visual hierarchy, generous spacing between all elements.
+        //     No crowding, no clutter.
+            
+        //     If any instruction text, zone label, or layout label appears in the rendered image, that is an error — regenerate until only the permitted content text is visible.";
+        
+        $prompt = "Create a clean, dramatic, professional book chapter feature image optimized for Instagram portrait posts.
 
             STRICT TEXT RULES:
             All text must be written only in correct English.
@@ -766,72 +1105,96 @@ class AiPostGenerationController extends ResponseController
             No misspellings.
             Use clean professional typography.
             Text must be perfectly readable and evenly spaced.
+            Do NOT render any layout labels, section names, zone numbers, or instruction text in the image.
+            Only render the exact content text values listed in the PERMITTED TEXT section below.
             
             CANVAS:
             Portrait layout 1080 × 1350 px (4:5).
+            Choose a background color that naturally matches the mood, tone, and theme of the chapter content and illustration.
+            The background color must feel appropriate to the subject — it can be dark, light, warm, cool, vibrant, or muted depending on what suits the content best.
+            The chosen background color must be applied consistently across the entire canvas from edge to edge.
             Maintain a safe margin on all sides.
             No content may touch edges.
             
-            LAYOUT GRID (MANDATORY):
-            Divide layout into zones:
+            ---
             
-            ZONE 1 — HEADER (Top 20%)
-            Title: 'The Carbonated Body'
+            PERMITTED TEXT IN IMAGE (Only these exact texts may appear — nothing else):
+            1. 'The Carbonated Body'
+            2. '{$chapter->chapter}: {$chapter->chapter_title}'
+            3. A 35 to 50 word description generated from the chapter summary
+            4. 'https://co2body.com/{$affiliate_id}'
             
-            ZONE 2 — SUBTITLE (Below header)
-            '{$chapter->chapter}: {$chapter->chapter_title}'
+            NO other text, label, heading, number, instruction word, or any other word may appear anywhere in the image.
             
-            ZONE 3 — VISUAL ILLUSTRATION (Upper middle)
-            Semi-transparent illustration highlighting {$chapter->chapter_title}.
-            Illustration must contain NO text.
+            ---
             
-            ZONE 4 — TEXT PANEL (Center area)
-            {$textFormat} summarizing key concepts from a {$design['content_angle']} about {$chapter->chapter_title}
+            LAYOUT STRUCTURE (Top to Bottom):
             
-            Formatting rules:
-            bullet points or short lines
-            evenly spaced
-            no overlap
-            centered composition
+            [TOP AREA — Title, 15% of canvas]
+            Large dominant title text at the very top.
+            Render only: 'The Carbonated Body'
+            Style: Very large bold serif or display font, centered.
+            Font color must have strong contrast against the chosen background so it is clearly readable.
+            Font size must be the largest text on the entire canvas.
+            Below the title draw a thin horizontal glowing divider line spanning 60% of canvas width, centered.
+            Divider color must complement the chosen background color.
             
-            ZONE 5 — RESERVED THUMBNAIL AREA (BOTTOM LEFT CORNER ONLY)
-            STRICT POSITIONING RULES:
-            Reserve a blank empty rectangle in the bottom-left corner.
-            This space must contain NO text, NO illustrations, NO graphics.
-            Place the provided cover image ONLY inside this reserved rectangle.
-            The thumbnail must NEVER overlap any text or visual elements.
-            Scale the thumbnail proportionally so it fits entirely inside its reserved corner space.
-            Maintain padding around it.
+            [UPPER MIDDLE — Chapter heading, 8% of canvas]
+            Render only: '{$chapter->chapter}: {$chapter->chapter_title}'
+            Style: Bold, accent color that complements the background, centered, medium-large font.
+            No background, sits directly on the canvas background.
             
-            ZONE 6 — FOOTER (Bottom center)
-            Centered URL:
-            https://co2body.com/{$affiliate_id}
-            
-            Footer rules:
-            Must not overlap thumbnail
-            Must remain horizontally centered
-            Must stay above bottom margin
-            Small but clearly readable font
-            
-            VISUAL STYLE:
+            [MAIN VISUAL — Large illustration, 45% of canvas]
+            A large, dramatic, high quality digital art illustration representing the themes from this summary: '{$chapter->chapter_summary}'
             Style: {$design['image_style']}
             Mood: {$design['visual_mood']}
             Tone: {$design['human_presence']}
             Angle: {$design['content_angle']}
+            The illustration lighting and color palette must blend naturally and harmoniously into the chosen background color.
+            The illustration must blend seamlessly into the background with soft edges — no hard borders or white halos.
+            This illustration must contain absolutely NO text, NO words, NO letters of any kind.
             
-            FINAL COMPOSITION RULES:
-            Balanced layout
-            Clean infographic design
-            Clear spacing between sections
-            No element overlaps another
-            No crowding
-            No clutter
-            Maintain visual hierarchy
-            Ensure every element stays inside its assigned zone
+            [BOTTOM AREA — Two elements side by side, 25% of canvas]
             
-            If any element overlaps, regenerate until layout is clean and properly spaced.";
+            LEFT SIDE (35% of canvas width, bottom-right corner):
+            Place the provided book cover image here exactly as it is.
+            Do NOT redesign, recolor, filter, alter, or redraw the book cover in any way.
+            The book cover must appear 100% pixel-identical to the original source image.
+            Add only a soft subtle glow or drop shadow around it to help it stand out from the background.
+            The book cover must be fully visible and not cropped.
             
+            RIGHT SIDE (55% of canvas width):
+            A semi-transparent rounded rectangle card.
+            Card background: A slightly lighter or darker shade of the canvas background with soft opacity and subtle border glow.
+            Inside this card render a short description of exactly 35 to 50 words.
+            Generated from this chapter summary: '{$chapter->chapter_summary}'
+            Text format rule: {$textFormat}
+            If {$textFormat} is paragraph — write as flowing prose sentences, no bullet points.
+            If {$textFormat} is bullet points — write as 3 to 4 short clean bullet points using a bullet symbol.
+            Text style: high contrast color against the card background, 18-20px, relaxed line height, centered alignment.
+            The card must NOT overlap the book cover on the right.
             
+            [FOOTER — Bottom 7% of canvas]
+            No background change — sits directly on the canvas background.
+            Render only: 'https://co2body.com/{$affiliate_id}'
+            Style: High contrast against the background, small but clearly readable font, centered horizontally.
+            Must not overlap the book cover or the text card above it.
+            
+            ---
+            
+            ABSOLUTE RULES:
+            Never render zone names, area labels, numbers, or any instruction text in the image.
+            Never alter the book cover — it must look exactly as provided.
+            No element may overlap another element.
+            The URL in the footer must be fully visible and readable.
+            The background color must feel natural and fitting to the chapter content — not always dark, not always light.
+            The illustration colors and lighting must harmonize with the chosen background.
+            All text colors must have strong contrast against their backgrounds for readability.
+            Clean layout, strong visual hierarchy, generous spacing between all elements.
+            No crowding, no clutter.
+            
+            If any instruction text, zone label, or layout label appears in the rendered image, that is an error — regenerate until only the permitted content text is visible.";
+          
         return ['prompt'=>$prompt,'imagepath'=>$imagepath];
     }
 
@@ -887,6 +1250,7 @@ class AiPostGenerationController extends ResponseController
         You MUST respond ONLY in JSON format Do not include any introductory text, no markdown formatting (like ```json), or explanations,with the following keys:
         'caption': A catchy caption with emojis.
         'hashtags': A string of 10-15 trending hashtags as comma separated values (include # symbol).
+        'summary': A 250-300 words chapter content summary from provided chapter content above without manupulating the meaning of chapter. 
         
         'title': A scroll-stopping headline.";
         

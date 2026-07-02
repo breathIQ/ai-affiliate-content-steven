@@ -166,7 +166,13 @@ class AffiliateClickController extends ResponseController
                 }, 5); // retry 5 times automatically if deadlock happens
             }
 
-            $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?link=".$user->amazon_link;
+            $amazon_link = env('AMAZON_URL');
+
+            if(!blank($user->amazon_link)){
+                $amazon_link = $user->amazon_link;
+            }
+
+            $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?link=".$amazon_link;
 
             // return redirect()->away($redirecturl);
             return $this->sendResponse($redirecturl, 'Redirect URL generated successfully', 200);

@@ -19,62 +19,123 @@ class InstagramAuthController extends ResponseController
 {
     // public function redirect()
     // {
+    //     $state = (string) Str::uuid();
     //     $query = http_build_query([
-    //         'client_id' => Config::get('services.instagram.client_id'),
+    //         'client_id' => Config::get('services.instagram.client_id'), // Your App ID
     //         'redirect_uri' => Config::get('services.instagram.redirect'),
-    //       'scope'         => implode(',', [
-    //             'instagram_business_basic',
-    //             'instagram_business_content_publish',
-    //             'instagram_business_manage_comments',
-    //             'instagram_business_manage_insights',
-    //         ]),
+    //         'state' => $state,
     //         'response_type' => 'code',
-    //         'state'         => csrf_token(),
-    //     ]); 
-    //     \Log::info('Instagram Auth Redirect URL:', $query);
-    //     // dd('https://www.facebook.com/v19.0/dialog/oauth?' . $query);
-    //     return redirect('https://www.facebook.com/v19.0/dialog/oauth?' . $query);
+    //         'scope' => 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_insights',
+    //     ]);
+    
+    //     // Use graph.facebook.com for the dialog
+    //     $authurl = "https://www.facebook.com/v19.0/dialog/oauth?{$query}";
+        
+    //     return $this->sendResponse($authurl, 'Instagram Auth url', 200);
     // }
-
-    // public function callback(Request $request)
+    
+    // public function handleCallback(Request $request) 
     // {
-    //     if (!$request->code) {
-    //         abort(400, 'Authorization failed');
+    //     $code = $request->query('code');
+    //     \Log::info('Instagram Auth Callback Code:', [$code]);
+    //     if (!$code) {
+    //         return redirect(Config::get('constant.frontend_url') . '/login?status=false&message=auth_failed');
     //     }
 
-    //     $tokenResponse = Http::asForm()->post(
-    //         'https://graph.facebook.com/v19.0/oauth/access_token',
-    //         [
-    //             'client_id' => Config::get('services.instagram.client_id'),
-    //             'client_secret' => Config::get('services.instagram.client_secret'),
-    //             'redirect_uri' => Config::get('services.instagram.redirect'),
-    //             'code' => $request->code,
-    //         ]
-    //     );
-
-    //     $accessToken = $tokenResponse['access_token'];
-    //     \Log::info('Instagram Auth Access Token:', $accessToken);
-    //     $user = Http::get('https://graph.facebook.com/me', [
-    //         'fields' => 'id,name,email',
-    //         'access_token' => $accessToken,
+    //     // 1. Exchange Code for Short-Lived Token (using Graph API)
+    //     $response = Http::get("https://graph.facebook.com/v19.0/oauth/access_token", [
+    //         'client_id' => Config::get('services.instagram.client_id'),
+    //         'client_secret' => Config::get('services.instagram.client_secret'),
+    //         'redirect_uri' => Config::get('services.instagram.redirect'),
+    //         'code' => $code,
     //     ]);
-
-    //     \Log::info('Instagram Auth User:', $user);
-    //     // Create or login user
-    //     $localUser = User::firstOrCreate(
-    //         ['facebook_id' => $user['id']],
-    //         ['name' => $user['name'], 'email' => $user['email'] ?? null]
-    //     );
-
-    //     $token = $localUser->createToken('auth')->plainTextToken;
-
-    //     // return redirect(
-    //     //     config('app.frontend_url') . '/auth-success?token=' . $token
-    //     // );
-    //     return response()->json([
-    //         'token' => $token,
-    //         'user' => $localUser,
+    
+    // Log::info('short token response',[$response->json()]);
+    //     $data = $response->json();
+    //     $shortLivedToken = $data['access_token'];
+    
+    //     // 2. Exchange for Long-Lived Token (using fb_exchange_token)
+    //     $longLivedResponse = Http::get("https://graph.facebook.com/v19.0/oauth/access_token", [
+    //         'grant_type' => 'fb_exchange_token',
+    //         'client_id' => Config::get('services.instagram.client_id'),
+    //         'client_secret' => Config::get('services.instagram.client_secret'),
+    //         'fb_exchange_token' => $shortLivedToken,
     //     ]);
+    //     Log::info('$longData token response',[$longLivedResponse->json()]);
+    
+    //     $longData = $longLivedResponse->json();
+    //     $longLivedToken = $longData['access_token'];
+    //     $expiresIn = $longData['expires_in'] ?? 5184000; // Default 60 days
+    
+    //     // 3. Get User ID & Profile (Business flow requires finding the IG User ID via the Page)
+    //     // For a simple 'Me' profile on Business:
+    //     $profileData = Http::get("https://graph.facebook.com/v19.0/me", [
+    //         'fields' => 'id,name',
+    //         'access_token' => $longLivedToken,
+    //     ])->json();
+    
+    //     // To get specific IG Business account info, you usually query: /me/accounts?fields=instagram_business_account
+    //     // But for basic login identification:
+    //     Log::info('$profileData token response',[$profileData]);
+
+    //     $name = $profileData['name'] ?? $profileData['username'] ?? 'Instagram User';
+    //     $avatar = $profileData['profile_picture_url'] ?? null;
+    //     $instagramUserId = $profileData['id'];
+
+    //     // Check if social account exists
+    //     $social = SocialAccount::where([
+
+    //         'provider' => 'instagram',
+
+    //         'provider_user_id' => $instagramUserId
+
+    //     ])->first();    
+
+    //     if ($social) {
+    //         $user = $social->user;
+
+    //         //update access token
+    //         $social->update([
+    //             'access_token' =>  $longLivedToken,
+    //             'refresh_token' => $longData['refresh_token'] ?? null,
+    //             'token_expires_at' => now()->addSeconds($expiresIn ?? 0),
+    //         ]);
+    //     } else {
+    //         // Try match by email
+    //         //$user = User::where('email', $user_data['email'])->first();
+
+    //       // if (!$user) {
+    //             $user = User::create([
+    //                 'name' =>  $name ?? 'Test Instagram User',
+    //                 'email' =>  NUll,
+    //                 'avatar' =>  $this->getAvatarPath($avatar),
+    //                 'password' => null, // social-only user
+    //                 'status' => Config::get('constant.status.Active'),
+    //                 'joined_by' => 'Instagram',
+    //                 'role_id' => Common::getRoleId('User'),
+    //                 'affiliate_id' => Common::generateUniqueAffiliateId($name ?? 'test'),
+    //             ]);
+    //       // }
+
+    //         SocialAccount::create([
+    //             'user_id' => $user->id,
+    //             'provider' => 'instagram',
+    //             'provider_user_id' => $instagramUserId,
+    //             'username' =>  $profileData['username'] ?? 'Test Instagram User',
+    //             'access_token' => $longLivedToken,
+    //             'refresh_token' => $longData['refresh_token'] ?? null,
+    //             'token_expires_at' => now()->addSeconds($expiresIn ?? 0),
+    //         ]);
+    //     }
+
+    //     $token = $user->createToken('api_token')->plainTextToken;
+    //     $user['access_token'] = $token;
+
+    //     // return $this->sendResponse($user, 'TikTok Auth successful', 200);
+        
+    //     $jsonData = urlencode(json_encode($user));
+    //     $frontendUrl = Config::get('constant.frontend_url').'/login?user=' . $jsonData;
+    //     return redirect()->away($frontendUrl);
     // }
 
     public function verify(Request $request)
@@ -144,11 +205,48 @@ class InstagramAuthController extends ResponseController
         $shortLivedToken = $data['access_token'];
         // $instagramUserId = $data['user_id'];
 
-        // Exchange for Long-Lived Token (60 days)
-        $longLivedResponse = Http::get('https://graph.instagram.com/access_token', [
-            'grant_type' => 'ig_exchange_token',
+        // // Exchange for Long-Lived Token (60 days)
+        // $longLivedResponse = Http::get('https://graph.instagram.com/access_token', [
+        //     'grant_type' => 'ig_exchange_token',
+        //     'client_secret' => Config::get('services.instagram.client_secret'),
+        //     'access_token' => $shortLivedToken,
+        // ]);
+        
+        // $params = [
+        //     'grant_type' => 'ig_exchange_token',
+        //     'client_secret' => Config::get('services.instagram.client_secret'),
+        //     'access_token' => $shortLivedToken,
+        // ];
+        
+        // $url = 'https://graph.instagram.com/access_token?' . http_build_query($params);
+        
+        // $longLivedResponse = Http::get($url);
+        
+        
+        $longLivedResponse = Http::asForm()->get('https://graph.instagram.com/access_token', [
+            'grant_type'    => 'ig_exchange_token',
             'client_secret' => Config::get('services.instagram.client_secret'),
-            'access_token' => $shortLivedToken,
+            'access_token'  => $shortLivedToken,
+        ]);
+        
+        $longData = $longLivedResponse->json();
+        
+        // If that still gives "Method Type: GET", use this hardcoded URL fix:
+        if (isset($longData['error'])) {
+            $url = "https://graph.instagram.com/access_token?" . http_build_query([
+                'grant_type'    => 'ig_exchange_token',
+                'client_secret' => Config::get('services.instagram.client_secret'),
+                'access_token'  => $shortLivedToken,
+            ]);
+            $longLivedResponse = Http::get($url);
+            $longData = $longLivedResponse->json();
+        }
+        
+        
+        Log::info('DEBUG: Full Instagram Error', [
+            'status' => $longLivedResponse->status(),
+            'body' => $longLivedResponse->body(), 
+            'headers' => $longLivedResponse->headers()
         ]);
 
         $longData = $longLivedResponse->json();
@@ -164,7 +262,8 @@ class InstagramAuthController extends ResponseController
             'fields' => 'id,username,name,profile_picture_url',
             'access_token' => $longLivedToken,
         ])->json();
-
+        
+        Log::info('profile data',[$profileData]);
         $name = $profileData['name'] ?? $profileData['username'] ?? 'Instagram User';
         $avatar = $profileData['profile_picture_url'] ?? null;
         $instagramUserId = $profileData['id'];

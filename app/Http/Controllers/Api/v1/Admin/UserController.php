@@ -31,6 +31,7 @@ class UserController extends ResponseController
                 
             ])
            ->withSum('totalClicksByUser', 'total_clicks')
+           ->with('socialAccounts')
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->search;
                 $q->where(function ($sub) use ($search) {
@@ -52,12 +53,18 @@ class UserController extends ResponseController
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                // 'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
-                'avatar' => $user->avatar ? Config::get('constant.frontend_url').'/storage/'.$user->avatar : null,
+                'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
                 'affiliate_id' => $user->affiliate_id,
                 'posts_generated' => $user->posts_count,
                 'posts_published' => $user->published_posts_count,
                 'total_clicks' => (int)$user->total_clicks_by_user_sum_total_clicks ?? 0,
+                'affiliate_link' => blank($user->amazon_link) ? 'Default' : $user->amazon_link,
+                'social_accounts' => $user->socialAccounts->map(function ($acc) {
+                    return [
+                        'provider' => $acc->provider,
+                        'username' => $acc->username,
+                    ];
+                }),
                 'created_at' => $user->created_at->format('Y-m-d H:i:s'),
                 'status' => $user->status,
             ];
@@ -137,6 +144,7 @@ class UserController extends ResponseController
                     'ai_generated' => true,
                     'status' => $post->status,
                     'created_at' => $post->created_at->format('M d, Y'),
+                    'published_at' => $post->published_at,
                 ];
             });
 
