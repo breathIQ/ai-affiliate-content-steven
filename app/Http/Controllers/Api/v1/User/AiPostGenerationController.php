@@ -16,112 +16,499 @@ use OpenAI\Exceptions\ErrorException;
 use CURLFile;
 use Auth;
 use Intervention\Image\Laravel\Facades\Image;
+use App\Services\CreditService;
+use App\Services\ImageGenerationPricingService;
+use App\Services\PostAutoPublishService;
 
 
 class AiPostGenerationController extends ResponseController
 {
+    public function __construct(
+        protected CreditService $credits,
+        protected ImageGenerationPricingService $pricing,
+        protected PostAutoPublishService $autoPublish,
+    ) {}
+
     public function generateContent(Request $request)
     {
-    //    dd(Config::get('constant.open_ai_keys.key'));
-        // $this->imageGeneration();
-        // dd("hello");
-        $validator = Validator::make($request->all(), [
+        $isDraftOnly = $request->boolean('draft_only');
+
+        // post_type/slides/design only matter once we're actually generating
+        // images - the draft step only needs the chapter, model, and prompt.
+        $rules = [
             'chapter' => 'required|exists:chapters,id',
             'model'   => 'required|string', // e.g., 'gpt-4-turbo', 'claude-3-haiku-20240307'
             'prompt'  => 'nullable|string',
-
-             // new fields
-            'post_type' => 'required|in:carousel,single',
-
-            'slides' => 'required|numeric|min:1|max:4',
-
-            // design only if slide_texts exists
-            'design' => 'required|array',
-
-            'design.image_style' => 'required|string',
-            'design.content_angle' => 'required|string',
-            'design.human_presence' => 'required|string',
-            'design.visual_mood' => 'required|string',
             'text_format' => 'required|string|in:paragraph,bullet_points',
-        ]);
+
+            // Draft/approve flow: draft_only returns text for review without
+            // charging credits or generating images. feedback+previous_text
+            // are used when the user asked for a revision. approved_text
+            // skips text generation entirely and generates images straight
+            // from the text the user already reviewed and accepted.
+            'draft_only' => 'nullable|boolean',
+            'feedback' => 'nullable|string',
+            'previous_text' => 'nullable|array',
+            'approved_text' => 'nullable|array',
+            'approved_text.title' => 'required_with:approved_text|string',
+            'approved_text.caption' => 'required_with:approved_text|string',
+            'approved_text.summary' => 'nullable|string',
+            'approved_text.image_text' => 'required_with:approved_text|string',
+            'approved_text.hashtags' => 'nullable|string',
+
+            // Which engine actually renders the image - independent from
+            // which model wrote the text. Defaults to the text model's
+            // engine if omitted (backward compatible).
+            'image_model' => 'nullable|in:openai,gemini',
+
+            // Publish-without-review: images generate synchronously inside
+            // this request, so unlike HeyGen/Grok no background poller is
+            // needed - the post is created, media attached, and published or
+            // scheduled before the response returns, via the same
+            // PostAutoPublishService flow. caption here is the social post
+            // caption the user approved (approved_text.image_text is what
+            // goes ON the image - different thing).
+            'publish_action' => 'nullable|in:review,publish_now,schedule',
+            'caption' => 'required_if:publish_action,publish_now,schedule|nullable|string',
+            'hashtags' => 'nullable|string',
+            'scheduled_at' => 'required_if:publish_action,schedule|nullable|date|after:now',
+            'platforms' => 'required_if:publish_action,publish_now,schedule|nullable|array',
+            'platforms.*' => 'in:instagram,tiktok',
+            'content_disclose' => 'nullable',
+            'brand_organic' => 'nullable',
+            'branded_content' => 'nullable',
+            'allow_comment' => 'nullable',
+            'allow_duet' => 'nullable',
+            'allow_stitch' => 'nullable',
+            'privacy_level' => 'nullable',
+        ];
+
+        if (! $isDraftOnly) {
+            $rules['post_type'] = 'required|in:carousel,single';
+            $rules['slides'] = 'required|numeric|min:1|max:4';
+            $rules['design'] = 'required|array';
+            $rules['design.image_style'] = 'required|string';
+            $rules['design.content_angle'] = 'required|string';
+            $rules['design.human_presence'] = 'required|string';
+            $rules['design.visual_mood'] = 'required|string';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return $this->sendValidationError($validator->errors()->first());
         }
-        // dd($request->all());
-        // $chapter = Chapter::find($request->chapter);
+
         $chapter = Chapter::join('book_chapters', 'chapters.chapter', '=', 'book_chapters.chapter')
             ->where('chapters.id', $request->chapter)
             ->select('chapters.id', 'chapters.chapter','chapters.content', 'book_chapters.chapter_title as chapter_title')
             ->first();
         if (!$chapter) {
-            $chapter = Chapter::where('id', $request->chapter)->first(); 
+            $chapter = Chapter::where('id', $request->chapter)->first();
         }
         $modelChoice = $request->model;
-        $userPrompt = $request->prompt;
-
         $postType    = $request->post_type;
         $slidesCount = (int) $request->slides;
         $design      = $request->design ?? null;
         $textFormat  = $request->text_format;
 
-        // Final prompt jo AI ko jayega
-        // $finalPrompt = "Chapter: {$chapter->content}\n\nTask: {$userPrompt}";
-        $finalPrompt = "Task: {$userPrompt}";
+        $finalPrompt = $this->buildTextGenerationPrompt($request->prompt, $request->feedback, $request->previous_text);
 
-        if (str_contains($modelChoice, 'gpt')) {
-            return $this->generateWithOpenAI('gpt-5.4-mini', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
-        } elseif (str_contains($modelChoice, 'claude')) {
-            return $this->generateWithClaude('claude-haiku-4-5', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
-        }else{
-            return $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+        // DRAFT STEP: generate/regenerate the caption text only, for the user
+        // to review and approve before anything is charged or images made.
+        if ($request->boolean('draft_only')) {
+            try {
+                $structuredData = $this->draftStructuredText($modelChoice, $finalPrompt, $chapter, $textFormat);
+
+                return $this->sendResponse([
+                    'title' => $structuredData['title'] ?? '',
+                    'caption' => $structuredData['caption'] ?? '',
+                    'hashtags' => $structuredData['hashtags'] ?? '',
+                    'summary' => $structuredData['summary'] ?? '',
+                    'image_text' => $structuredData['image_text'] ?? '',
+                ], 'Draft generated successfully', 200);
+            } catch (\Throwable $e) {
+                return $this->sendError('Could not generate draft text', ['error' => $e->getMessage()], 500);
+            }
         }
 
-        return $this->sendError('Invalid Model Selected', [], 400);
+        // The image engine defaults to whatever the text model implies
+        // (gpt/claude -> OpenAI images, gemini -> Gemini images), but the
+        // user can pick a different engine explicitly once they've approved
+        // the text, since it's now a separate step from text generation.
+        // Cost is known exactly upfront since engine and slide count are
+        // both known before any AI call happens; only which slides succeed
+        // is uncertain.
+        $imageEngine = $request->input('image_model')
+            ?: ((str_contains($modelChoice, 'gpt') || str_contains($modelChoice, 'claude')) ? 'openai' : 'gemini');
+
+        $user = Auth::user();
+        $hold = $this->pricing->estimatedHoldCredits($imageEngine, $slidesCount);
+
+        if (! $this->credits->hasSufficientBalance($user, $hold)) {
+            return $this->sendError(
+                "Not enough credits. This generation requires {$hold} credits, you have {$user->credits_balance}.",
+                ['credits_required' => $hold, 'credits_balance' => $user->credits_balance],
+                422
+            );
+        }
+
+        if (! $this->credits->deduct($user, $hold, 'AI post generation (estimated hold)')) {
+            return $this->sendError('Not enough credits.', [], 422);
+        }
+
+        try {
+            if ($request->filled('approved_text')) {
+                // Text was already drafted and approved by the user - skip
+                // straight to image generation using it, no further text call.
+                $response = $this->buildContentResponse($request->input('approved_text'), $modelChoice, $imageEngine, $chapter, $postType, $slidesCount, $design, $textFormat);
+            } elseif (str_contains($modelChoice, 'gpt')) {
+                $response = $this->generateWithOpenAI('gpt-5.4-mini', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+            } elseif (str_contains($modelChoice, 'claude')) {
+                $response = $this->generateWithClaude('claude-haiku-4-5', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+            }else{
+                $response = $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+            }
+        } catch (\Throwable $e) {
+            $this->credits->refund($user, $hold, 'Refund: AI post generation failed');
+            return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
+        }
+
+        $this->reconcileImageGenerationCost($user, $response, $hold, $imageEngine, $slidesCount);
+
+        return $this->applyPublishAction($user, $request, $response);
+    }
+
+    /**
+     * Publish-without-review for images. Since generation completed inside
+     * this request, the whole pending_render lifecycle collapses into one
+     * synchronous pass: create the post, record platforms, attach whichever
+     * slides succeeded, then publish or schedule - same services the
+     * HeyGen/Grok pollers use, no cron involved. If nothing succeeded the
+     * response is returned untouched with publish_action reset to 'review',
+     * which drops the frontend back into the normal draft/review flow
+     * (nothing was created, nothing to publish).
+     */
+    protected function applyPublishAction($user, Request $request, $response)
+    {
+        $publishAction = $request->input('publish_action', 'review');
+
+        if ($publishAction === 'review') {
+            return $response;
+        }
+
+        $payload = json_decode($response->getContent(), true);
+
+        if (! ($payload['success'] ?? false)) {
+            return $response;
+        }
+
+        // Same success test the Library auto-save uses: only an explicit
+        // status === false counts as a failed slide.
+        $images = collect($payload['data']['images'] ?? [])
+            ->filter(fn ($img) => ($img['status'] ?? true) !== false && ! empty($img['image_url']))
+            ->values();
+
+        if ($images->isEmpty()) {
+            $payload['data']['publish_action'] = 'review';
+            return response()->json($payload, 200);
+        }
+
+        try {
+            // Mirrors the Library auto-save-draft rules: a batch that ended
+            // up with one usable image becomes a single post regardless of
+            // what was requested.
+            $mediaAssets = $images->count() === 1 ? 'single' : ($payload['data']['post_type'] ?? 'carousel');
+            $urls = ($mediaAssets === 'single' ? $images->take(1) : $images)->pluck('image_url')->all();
+
+            $post = $this->autoPublish->createPendingPost(
+                $user,
+                (int) $request->chapter,
+                $request->caption,
+                $payload['data']['model'] ?? 'ChatGPT',
+                $mediaAssets,
+                $request->hashtags
+            );
+
+            $this->autoPublish->preparePendingPublish($post, [
+                'platforms' => $request->platforms,
+                'scheduled_at' => $publishAction === 'schedule' ? $request->scheduled_at : null,
+                'content_disclose' => $request->content_disclose,
+                'brand_organic' => $request->brand_organic,
+                'branded_content' => $request->branded_content,
+                'allow_comment' => $request->allow_comment,
+                'allow_duet' => $request->allow_duet,
+                'allow_stitch' => $request->allow_stitch,
+                'privacy_level' => $request->privacy_level,
+            ]);
+
+            $this->autoPublish->finalizeReadyPost($post, $urls);
+
+            $payload['data']['post_id'] = $post->id;
+            $payload['data']['publish_action'] = $publishAction;
+
+            return response()->json($payload, 200);
+        } catch (\Throwable $e) {
+            // The images themselves succeeded and were paid for - never fail
+            // the whole request over the publish step. Fall back to the
+            // review flow so the frontend auto-saves them as a draft.
+            Log::error('Auto-publish after image generation failed', ['error' => $e->getMessage(), 'user_id' => $user->id]);
+
+            $payload['data']['publish_action'] = 'review';
+            return response()->json($payload, 200);
+        }
+    }
+
+    /**
+     * Builds the prompt sent to the text model. When the user disapproved a
+     * draft and asked for changes, the previous attempt and their requested
+     * changes are included so the revision actually addresses the feedback
+     * rather than starting over blind.
+     */
+    private function buildTextGenerationPrompt(?string $userPrompt, ?string $feedback, ?array $previousText): string
+    {
+        $task = trim((string) $userPrompt) !== ''
+            ? $userPrompt
+            : 'Write an engaging, accurate post covering the most interesting and important ideas from this chapter.';
+        $prompt = "Task: {$task}";
+
+        if ($feedback) {
+            $previousCaption = $previousText['caption'] ?? '';
+            $previousImageText = $previousText['image_text'] ?? '';
+            $prompt .= "\n\nYou previously wrote this caption:\n{$previousCaption}"
+                . "\n\nAnd this text for the image itself:\n{$previousImageText}"
+                . "\n\nThe user requested these changes: {$feedback}"
+                . "\n\nRevise the draft to address the requested changes, keeping the same required JSON structure.";
+        }
+
+        return $prompt;
+    }
+
+    /**
+     * Dispatches to the right model's text-only fetch for the draft step -
+     * same routing rule as generateContent()'s final-generation branch.
+     */
+    private function draftStructuredText(string $modelChoice, string $prompt, $chapter, string $textFormat): array
+    {
+        if (str_contains($modelChoice, 'gpt')) {
+            return $this->fetchOpenAIText('gpt-5.4-mini', $prompt, $chapter, $textFormat);
+        } elseif (str_contains($modelChoice, 'claude')) {
+            return $this->fetchClaudeText('claude-haiku-4-5', $prompt, $chapter, $textFormat);
+        }
+
+        return $this->fetchGeminiText($modelChoice, $prompt, $chapter, $textFormat);
+    }
+
+    /**
+     * Shared by the final-generation path (with a freshly-approved-text
+     * shortcut) so both draft and non-draft flows produce an identical
+     * response shape for the frontend.
+     */
+    private function buildContentResponse(array $structuredData, string $modelChoice, string $imageEngine, $chapter, $postType, $slidesCount, $design, $textFormat)
+    {
+        // getImages()/generateGeminiImage() route purely on this value being
+        // exactly 'gemini' vs anything else - see getImages() below.
+        $imageModelParam = $imageEngine === 'gemini' ? 'gemini' : 'gpt-5.4-mini';
+
+        $modelLabel = str_contains($modelChoice, 'gpt')
+            ? 'ChatGPT'
+            : (str_contains($modelChoice, 'claude') ? 'Claude' : 'Gemini');
+
+        $images = $this->getImages($chapter, $postType, $slidesCount, $design, $imageModelParam, $textFormat, $structuredData['image_text'] ?? '');
+
+        return $this->sendResponse([
+            'caption' => ($structuredData['title'] ?? '') . PHP_EOL . ($structuredData['caption'] ?? ''),
+            'hashtags' => $structuredData['hashtags'] ?? '',
+            'summary' => $structuredData['summary'] ?? '',
+            'image_text' => $structuredData['image_text'] ?? '',
+            'title' => $structuredData['title'] ?? '',
+            'model' => $modelLabel,
+            'post_type' => $postType,
+            'slides' => $slidesCount,
+            'images' => $images,
+            'chapter' => preg_replace('/^CHAPTER\s+/i', 'Ch-', $chapter->chapter),
+            'chapter_title' => $chapter->chapter_title,
+            'chapter_id' => $chapter->id,
+            'ai_prompt' => $structuredData['caption'] ?? '',
+        ], 'Content generated successfully', 200);
+    }
+
+    /**
+     * Refund the difference between the upfront hold and what was actually
+     * delivered: a full refund if the text call itself failed (no images
+     * were ever attempted), or a partial refund for any slide that failed
+     * to generate. Charges only for images that actually succeeded.
+     */
+    protected function reconcileImageGenerationCost($user, $response, int $held, string $imageEngine, int $slidesCount): void
+    {
+        $payload = json_decode($response->getContent(), true);
+
+        if (! ($payload['success'] ?? false)) {
+            $this->credits->refund($user, $held, 'Refund: AI post generation failed');
+            return;
+        }
+
+        $images = $payload['data']['images'] ?? [];
+        $successfulImages = collect($images)->where('status', true)->count();
+
+        $actualCost = $this->pricing->textGenerationCostCredits()
+            + ($this->pricing->imageCostCredits($imageEngine) * $successfulImages);
+
+        $refund = $held - $actualCost;
+
+        if ($refund > 0) {
+            $this->credits->refund($user, $refund, "Refund: {$successfulImages}/{$slidesCount} images generated successfully");
+        } elseif ($refund < 0) {
+            Log::warning('AI post generation actual cost exceeded the held credits', [
+                'user_id' => $user->id,
+                'held' => $held,
+                'actual_cost' => $actualCost,
+                'successful_images' => $successfulImages,
+            ]);
+        }
+    }
+
+    /**
+     * Text-only OpenAI call, used by both the draft step and the final
+     * generation step (generateWithOpenAI below) so behavior stays identical
+     * regardless of which path is taken.
+     */
+    private function fetchOpenAIText($model, $prompt, $chapter, $textFormat): array
+    {
+        $systemInstruction = $this->getSystemInstruction($chapter, $textFormat);
+
+        $result = OpenAI::chat()->create([
+            'model' => $model,
+            'messages' => [
+                ['role' => 'system', 'content' => $systemInstruction],
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ]);
+
+        $rawContent = $result->choices[0]->message->content;
+        if (!$rawContent) {
+            throw new \Exception("AI returned empty content.");
+        }
+
+        $structuredData = json_decode($rawContent, true);
+        if (is_null($structuredData)) {
+            throw new \Exception("Invalid JSON format received from AI.");
+        }
+
+        return $structuredData;
+    }
+
+    private function fetchClaudeText($model, $prompt, $chapter, $textFormat): array
+    {
+        $systemInstruction = $this->getSystemInstruction($chapter, $textFormat);
+
+        $response = Http::withHeaders([
+            'x-api-key' => Config::get('constant.claud_keys.key'),
+            'anthropic-version' => '2023-06-01',
+            'content-type' => 'application/json',
+        ])->post('https://api.anthropic.com/v1/messages', [
+            'model' => $model,
+            'max_tokens' => 2048,
+            'system' => $systemInstruction,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt]
+            ],
+        ]);
+
+        if ($response->failed()) {
+            $errorData = $response->json();
+            $errorMessage = $errorData['error']['message'] ?? 'Unknown Claude API Error';
+            throw new \Exception("Claude API Error: " . $errorMessage);
+        }
+
+        $resData = $response->json();
+
+        if (!isset($resData['content'][0]['text'])) {
+            throw new \Exception("Unexpected API response structure.");
+        }
+
+        $rawContent = $resData['content'][0]['text'];
+        $cleanContent = preg_replace('/^```json\s*|\s*```$/', '', trim($rawContent));
+        $structuredData = json_decode($cleanContent, true);
+
+        if (is_null($structuredData)) {
+            throw new \Exception("Invalid JSON format received from AI.");
+        }
+
+        return $structuredData;
+    }
+
+    private function fetchGeminiText($model, $prompt, $chapter, $textFormat): array
+    {
+        $systemInstruction = $this->getSystemInstruction($chapter, $textFormat);
+        $apiKey = Config::get('constant.gemini_keys.key');
+
+        $response = Http::withHeaders([
+            'x-goog-api-key' => $apiKey,
+            'Content-Type'  => 'application/json',
+        ])->post(
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent',
+            [
+                'system_instruction' => [
+                    'parts' => [
+                        ['text' => $systemInstruction]
+                    ]
+                ],
+                'contents' => [
+                    [
+                        'role' => 'user',
+                        'parts' => [
+                            ['text' => $prompt]
+                        ]
+                    ]
+                ],
+            ]
+        );
+
+        if ($response->failed()) {
+            $errorData = $response->json();
+            $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error';
+            throw new \Exception("Gemini API Error: " . $errorMessage);
+        }
+
+        $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+
+        if (!$text) {
+            throw new \Exception('Empty response from Gemini.');
+        }
+
+        $text = trim($text);
+        $text = preg_replace('/^```json\s*/', '', $text);
+        $text = preg_replace('/^```\s*/', '', $text);
+        $text = preg_replace('/\s*```$/', '', $text);
+        $text = trim($text, "\" \n\r\t");
+
+        $data = json_decode($text, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \Exception('Invalid JSON returned from Gemini: ' . json_last_error_msg());
+        }
+
+        if (is_null($data) || !is_array($data)) {
+            throw new \Exception("Invalid JSON format received from Gemini. Try again");
+        }
+
+        return $data;
     }
 
     private function generateWithOpenAI($model, $prompt,$chapter,$postType,$slidesCount,$design,$textFormat)
     {
-        
-    //    dd( $affiliate_id = Auth::user()->affiliate_id);
-      // AI ko specific format sikhane ke liye prompt
-        $systemInstruction = $this->getSystemInstruction($chapter);
-        
         try {
-           
-            $result = OpenAI::chat()->create([
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'system', 'content' => $systemInstruction],
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-            ]);
-            
-            $rawContent = $result->choices[0]->message->content;
-            //Error Handling: Check if rawContent is empty
-            if (!$rawContent) {
-                throw new \Exception("AI returned empty content.");
-            }
-            // dd($rawContent);
-            $structuredData = json_decode($rawContent, true);
-            
-            if (is_null($structuredData)) {
-                // Agar JSON invalid hai toh manually handle karein ya error dein
-                throw new \Exception("Invalid JSON format received from AI.");
-            }
-            // dd($structuredData);
-            /** ------------------ IMAGE GENERATION ------------------ */
-            // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat, $structuredData['summary']);
+            $structuredData = $this->fetchOpenAIText($model, $prompt, $chapter, $textFormat);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat, $structuredData['image_text'] ?? '');
 
-            /** ------------------ RESPONSE ------------------ */
             return $this->sendResponse([
                 'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'],
                 'summary' => $structuredData['summary'],
-                // 'script' => $structuredData['script'],
+                'image_text' => $structuredData['image_text'] ?? '',
                 'title' => $structuredData['title'],
-                'model' => 'ChatGPT', //$model,
+                'model' => 'ChatGPT',
                 'post_type' => $postType,
                 'slides' => $slidesCount,
                 'images' => $images,
@@ -129,10 +516,8 @@ class AiPostGenerationController extends ResponseController
                 'chapter_title' => $chapter->chapter_title,
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
-                // 'generated_image' => $imageUrl,
             ], 'Content generated successfully', 200);
         } catch (\Throwable $e) {
-            // return $this->sendError('Error generating content', ['error' => $e->getMessage()], 500);
             if (str_contains($e->getMessage(), 'rate limit')) {
                 sleep(2); // wait before retry
             }
@@ -144,61 +529,17 @@ class AiPostGenerationController extends ResponseController
 
     private function generateWithClaude($model, $prompt, $chapter, $postType, $slidesCount, $design,$textFormat)
     {
-        // System Instruction for structured output like your UI
-        $systemInstruction = $this->getSystemInstruction($chapter);
-            // dd(Config::get('constant.claud_keys.key'));
         try {
-            $response = Http::withHeaders([
-                'x-api-key' => Config::get('constant.claud_keys.key'),
-                'anthropic-version' => '2023-06-01',
-                'content-type' => 'application/json',
-            ])->post('https://api.anthropic.com/v1/messages', [
-                'model' => $model,
-                'max_tokens' => 2048, // Increased for long scripts
-                'system' => $systemInstruction, // System prompt should be here, not in messages
-                'messages' => [
-                    ['role' => 'user', 'content' => $prompt]
-                ],
-            ]);
-           
-            // 1. Check for API Errors (like 401, 400, 500)
-            if ($response->failed()) {
-                $errorData = $response->json();
-                $errorMessage = $errorData['error']['message'] ?? 'Unknown Claude API Error';
-                throw new \Exception("Claude API Error: " . $errorMessage);
-            }
+            $structuredData = $this->fetchClaudeText($model, $prompt, $chapter, $textFormat);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat, $structuredData['image_text'] ?? '');
 
-            $resData = $response->json();
-
-            // 2. Safe access to content
-            if (!isset($resData['content'][0]['text'])) {
-                throw new \Exception("Unexpected API response structure.");
-            }
-
-            $rawContent = $resData['content'][0]['text'];
-            
-            // Remove ```json ... ``` wrapper
-            $cleanContent = preg_replace('/^```json\s*|\s*```$/', '', trim($rawContent));
-
-            // Decode JSON
-            $structuredData = json_decode($cleanContent, true);
-            // dd($structuredData);
-            if (is_null($structuredData)) {
-                throw new \Exception("Invalid JSON format received from AI.");
-            }
-
-            // --- NEW: Image Generation --- 
-            // $images = $this->getImages($structuredData['caption'], $postType, $slidesCount, $slideTexts, $design);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat, $structuredData['summary']);
-
-            // 3. Send successful response to React
             return $this->sendResponse([
                 'caption' => $structuredData['title'] . PHP_EOL . $structuredData['caption'],
                 'hashtags' => $structuredData['hashtags'] ?? '',
                 'summary' => $structuredData['summary'] ?? '',
-                // 'script' => $structuredData['script'] ?? '',
+                'image_text' => $structuredData['image_text'] ?? '',
                 'title' => $structuredData['title'] ?? '',
-                'model' => 'Claude', //$model,  
+                'model' => 'Claude',
                 'post_type' => $postType,
                 'slides' => $slidesCount,
                 'images' => $images,
@@ -207,7 +548,6 @@ class AiPostGenerationController extends ResponseController
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
             ], 'Content generated successfully', 200);
-
         } catch (\Throwable $e) {
             return $this->sendError('Error generating content claude', ['error' => $e->getMessage()], 500);
         }
@@ -215,90 +555,17 @@ class AiPostGenerationController extends ResponseController
 
     Private function generateWithGemini($model, $prompt, $chapter, $postType, $slidesCount, $design,$textFormat)
     {
-        $systemInstruction = $this->getSystemInstruction($chapter);
-        $apiKey = Config::get('constant.gemini_keys.key');
-        $response = null;
         try {
-            
-            $response = Http::withHeaders([
-                'x-goog-api-key' => $apiKey,
-                'Content-Type'  => 'application/json',
-            ])->post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent',
-                [
-                    'system_instruction' => [
-                        'parts' => [
-                            [
-                                'text' => $systemInstruction
-                            ]
-                        ]
-                    ],
-                    'contents' => [
-                        [
-                            'role' => 'user',
-                            'parts' => [
-                                [
-                                    'text' => $prompt
-                                ]
-                            ]
-                        ]
-                    ],
-                    // 'generationConfig' => [
-                    //     'temperature' => 0.7,
-                    //     'maxOutputTokens' => 600
-                    // ]
-                ]
-            );
+            $data = $this->fetchGeminiText($model, $prompt, $chapter, $textFormat);
+            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat,$data['image_text'] ?? '');
 
-            // 1. Check for API Errors (like 401, 400, 500)
-            if (!isset($response) ||$response->failed()) {
-                $errorData = $response->json();
-                $errorMessage = $errorData['error']['message'] ?? 'Unknown Gemini API Error';
-                return $this->sendError("Gemini API Error: " . $errorMessage);
-            }
-            
-            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
-           
-            if (!$text) {
-                throw new \Exception('Empty response from Gemini.');
-            }
-
-            // Remove any surrounding quotes or whitespace
-            // $text = trim($text, "\"\n ");
-            $text = trim($text);
-    
-            // Remove ```json and ``` wrappers
-            $text = preg_replace('/^```json\s*/', '', $text);
-            $text = preg_replace('/^```\s*/', '', $text);
-            $text = preg_replace('/\s*```$/', '', $text);
-            
-            // Remove triple quotes if present
-            $text = trim($text, "\" \n\r\t");
-            
-            
-            // Decode JSON
-            $data = json_decode($text, true);
-            //  
-            // Debug log
-            // \Log::info('Gemini Response:', (array) $data);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \Exception('Invalid JSON returned from Gemini: ' . json_last_error_msg());
-            }
-           
-            if (is_null($data) || !is_array($data)) {
-                throw new \Exception("Invalid JSON format received from Gemini.Try again");
-            }
-            // dd($response->json(),$text,$data,$data['title'],$data['hashtags'],$data['script'],$data['caption']);
-            $images = $this->getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat,$data['summary']);
-        
             return $this->sendResponse([
                 'caption' => $data['title'] . PHP_EOL . $data['caption'],
                 'hashtags' => $data['hashtags'],
                 'summary' => $data['summary'],
-                // 'script' => $data['script'],
+                'image_text' => $data['image_text'] ?? '',
                 'title' => $data['title'],
-                'model' => 'Gemini', //$model,  
+                'model' => 'Gemini',
                 'post_type' => $postType,
                 'slides' => $slidesCount,
                 'images' => $images,
@@ -307,7 +574,6 @@ class AiPostGenerationController extends ResponseController
                 'chapter_id' => $chapter->id,
                 'ai_prompt' => $prompt,
             ], 'Content generated successfully', 200);
-
         } catch (\Throwable $e) {
             \Log::error('Gemini Exception: ' . $e->getMessage());
             \Log::error($e->getTraceAsString());
@@ -387,6 +653,12 @@ class AiPostGenerationController extends ResponseController
             
             $response = curl_exec($ch);
             if ($response === false) {
+                \Log::error('OpenAI image generation: curl_exec failed', [
+                    'curl_errno' => curl_errno($ch),
+                    'curl_error' => curl_error($ch),
+                ]);
+                curl_close($ch);
+
                 return [
                     'success' => false,
                     'image_url' => '',
@@ -395,15 +667,19 @@ class AiPostGenerationController extends ResponseController
             }
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
-            \Log::info('open ai image generation $httpCode',['code'=>$httpCode]);
-            // cleanup
             $result = json_decode($response, true);
-            // dd($result);
-            \Log::info('open ai image generation',['result'=>$result['created']]);
+
             if ($httpCode != 200) {
 
-                $errorMessage = $result['error']['message'] 
+                $errorMessage = $result['error']['message']
                     ?? 'OpenAI image generation failed';
+
+                \Log::error('OpenAI image generation: non-200 response', [
+                    'http_code' => $httpCode,
+                    'error_message' => $errorMessage,
+                    'error_type' => $result['error']['type'] ?? null,
+                    'error_code' => $result['error']['code'] ?? null,
+                ]);
 
                 return [
                     'success' => false,
@@ -411,8 +687,13 @@ class AiPostGenerationController extends ResponseController
                     'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
                 ];
             }
-            $base64 = $result['data'][0]['b64_json'];
+            $base64 = $result['data'][0]['b64_json'] ?? null;
             if (!$base64) {
+                \Log::error('OpenAI image generation: response missing b64_json', [
+                    'http_code' => $httpCode,
+                    'response_keys' => is_array($result) ? array_keys($result) : null,
+                ]);
+
                 return [
                     'success' => false,
                     'image_url' => '',
@@ -426,13 +707,18 @@ class AiPostGenerationController extends ResponseController
             // Generate a unique filename and save to your public disk
             $fileName = 'posts/temp/ai_' . uniqid() . '.jpg';
             Storage::disk('public')->put($fileName, $imageData);
-            $imageUrl = Config::get('constant.frontend_url').'/storage/'.$fileName;
+            $imageUrl = Config::get('constant.media_base_url').config('constant.media_base_path').$fileName;
             return [
                 'success' => true,
                 'image_url' => $imageUrl,
                 'error' => null
             ];
         } catch (\Exception $e) {
+            \Log::error('OpenAI image generation: exception', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
             return [
                 'success' => false,
@@ -440,10 +726,10 @@ class AiPostGenerationController extends ResponseController
                 'error' => 'Currently this model server is under high load. Try another AI model or upload manually.'
             ];
         }
-        
+
     }
 
-    private function buildSlideImagePrompt($chapter, $design,$textFormat, $summary=null)
+    private function buildSlideImagePrompt($chapter, $design,$textFormat, $imageText=null)
     {
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         $affiliate_id = Auth::user()->affiliate_id;
@@ -459,16 +745,14 @@ class AiPostGenerationController extends ResponseController
             
             CONTENT SECTION:
             TEXT ACCURACY IS HIGHEST PRIORITY.
-            
-            On a clean semi-transparent overlay or clear negative space, include {$textFormat} as a SHORT Instagram-friendly educational micro-summary generated STRICTLY from this chapter summary:
-            {$summary}
-            
+
+            On a clean semi-transparent overlay or clear negative space, render this EXACT text, verbatim and unchanged - the user has already reviewed and approved this precise wording, do not summarize, paraphrase, shorten, or reword it in any way:
+            {$imageText}
+
             STRICT CONTENT RULES:
-            Extract only the most important ideas from the summary.
-            Maximum 35-50 words total.
-            Use 3-5 short readable lines only.
-            Use simple common English words.
-            Every sentence must be complete and meaningful.
+            Render the approved text exactly as given, character for character.
+            Do not add, remove, or alter any words.
+            Use simple common English words as already written.
             No long explanations.
             No filler text.
             No technical overload.
@@ -528,15 +812,15 @@ class AiPostGenerationController extends ResponseController
          return ['prompt'=>$prompt,'imagepath'=>$imagePath];
     }
 
-    private function getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat,$summary=null)
+    private function getImages($chapter, $postType, $slidesCount, $design, $model,$textFormat,$imageText=null)
     {
         // dd($design);
         $images = [];
         if($model === 'gemini'){
-            $imagePrompt = $this->buildGeminiImagePrompt($chapter,$design,$textFormat, $summary);
+            $imagePrompt = $this->buildGeminiImagePrompt($chapter,$design,$textFormat, $imageText);
         }else{
-            $imagePrompt = $this->buildSlideImagePrompt($chapter,$design,$textFormat, $summary);    
-        }   
+            $imagePrompt = $this->buildSlideImagePrompt($chapter,$design,$textFormat, $imageText);
+        }
        
         set_time_limit(900);   
         
@@ -705,7 +989,7 @@ class AiPostGenerationController extends ResponseController
                     // Generate a unique filename and save to your public disk
                     $fileName = 'posts/temp/gai_' . uniqid() . '.jpg';
                     Storage::disk('public')->put($fileName, $imageData);
-                    $dataUrl = Config::get('constant.frontend_url').'/storage/'.$fileName;
+                    $dataUrl = Config::get('constant.media_base_url').config('constant.media_base_path').$fileName;
                     return [
                         'success' => true,
                         'image_url' => $dataUrl,
@@ -757,7 +1041,7 @@ class AiPostGenerationController extends ResponseController
         
     }
     
-    private function buildGeminiImagePrompt($chapter,$design,$textFormat, $summary=null)
+    private function buildGeminiImagePrompt($chapter,$design,$textFormat, $imageText=null)
     {
         
         $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
@@ -1145,7 +1429,7 @@ class AiPostGenerationController extends ResponseController
             No background, sits directly on the canvas background.
             
             [MAIN VISUAL — Large illustration, 45% of canvas]
-            A large, dramatic, high quality digital art illustration representing the themes from this summary: '{$chapter->chapter_summary}'
+            A large, dramatic, high quality digital art illustration representing the themes in this text: '{$imageText}'
             Style: {$design['image_style']}
             Mood: {$design['visual_mood']}
             Tone: {$design['human_presence']}
@@ -1166,11 +1450,8 @@ class AiPostGenerationController extends ResponseController
             RIGHT SIDE (55% of canvas width):
             A semi-transparent rounded rectangle card.
             Card background: A slightly lighter or darker shade of the canvas background with soft opacity and subtle border glow.
-            Inside this card render a short description of exactly 35 to 50 words.
-            Generated from this chapter summary: '{$chapter->chapter_summary}'
-            Text format rule: {$textFormat}
-            If {$textFormat} is paragraph — write as flowing prose sentences, no bullet points.
-            If {$textFormat} is bullet points — write as 3 to 4 short clean bullet points using a bullet symbol.
+            Inside this card render this EXACT text, verbatim and unchanged - the user has already reviewed and approved this precise wording, do not summarize, paraphrase, shorten, or reword it in any way:
+            '{$imageText}'
             Text style: high contrast color against the card background, 18-20px, relaxed line height, centered alignment.
             The card must NOT overlap the book cover on the right.
             
@@ -1198,7 +1479,7 @@ class AiPostGenerationController extends ResponseController
         return ['prompt'=>$prompt,'imagepath'=>$imagepath];
     }
 
-    private function getSystemInstruction($chapter)
+    private function getSystemInstruction($chapter, $textFormat = 'paragraph')
     {
         // $systemInstruction = "
         //     You are a professional social media content engine for a science book titled 'The Carbonated Body'.
@@ -1240,18 +1521,22 @@ class AiPostGenerationController extends ResponseController
         //     Note:- You MUST respond ONLY in JSON format Do not include any introductory text, markdown formatting (like ```json), or explanations
         // ";
 
-        $systemInstruction = "You are a professional social media content engine for a science book titled 'The Carbonated Body'. 
-        Your task is to generate SHORT-FORM social media content for Instagram and TikTok posts, 
+        $imageTextFormatInstruction = $textFormat === 'bullet_points'
+            ? "3-5 short bullet points as a single string, one per line, each line starting with '• '"
+            : "3-5 short, complete sentences in flowing paragraph form";
+
+        $systemInstruction = "You are a professional social media content engine for a science book titled 'The Carbonated Body'.
+        Your task is to generate SHORT-FORM social media content for Instagram and TikTok posts,
         based on provided user prompt using chapter content:'$chapter->content'
         IMPORTANT RULES (MANDATORY):
         -Do NOT invent facts beyond the chapter content provided.
         -Content must be educational only, not medical advice.
-        
+
         You MUST respond ONLY in JSON format Do not include any introductory text, no markdown formatting (like ```json), or explanations,with the following keys:
-        'caption': A catchy caption with emojis.
+        'caption': A catchy caption with emojis, for the social media post description. This is NOT rendered on the image itself.
         'hashtags': A string of 10-15 trending hashtags as comma separated values (include # symbol).
-        'summary': A 250-300 words chapter content summary from provided chapter content above without manupulating the meaning of chapter. 
-        
+        'summary': A 250-300 words chapter content summary from provided chapter content above without manupulating the meaning of chapter.
+        'image_text': The EXACT text that will be rendered visually on the image itself - this is what the user reviews and approves before the image is generated, and the image generator will render it verbatim. Must be 35-50 words total, formatted as {$imageTextFormatInstruction}. Use simple common English words, perfect spelling and grammar, complete sentences only. No hashtags, no emojis, no special symbols, no filler text.
         'title': A scroll-stopping headline.";
         
         // 'script': A short script.

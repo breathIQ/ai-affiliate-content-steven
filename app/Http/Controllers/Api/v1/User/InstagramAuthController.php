@@ -389,8 +389,13 @@ class InstagramAuthController extends ResponseController
         ]);
         \Log::info('response of instgram link account',[$response->json()]);
         $data = $response->json();
+        if (!isset($data['access_token'])) {
+            Log::error('Instagram link: short-lived token exchange failed', [$data]);
+            $linkResponse = ['status' => false, 'message' => 'Instagram auth failed: could not obtain access token.'];
+            $frontendUrl = Config::get('constant.frontend_url').'/u/dashboard?linkResponse=' . urlencode(json_encode($linkResponse));
+            return redirect()->away($frontendUrl);
+        }
         $shortLivedToken = $data['access_token'];
-        // $instagramUserId = $data['user_id'];
 
         // Exchange for Long-Lived Token (60 days)
         $longLivedResponse = Http::get('https://graph.instagram.com/access_token', [
@@ -400,8 +405,15 @@ class InstagramAuthController extends ResponseController
         ]);
 
         $longData = $longLivedResponse->json();
+        Log::info('Instagram link long-lived token response', [$longData]);
+        if (!isset($longData['access_token'])) {
+            Log::error('Instagram link: long-lived token exchange failed', [$longData]);
+            $linkResponse = ['status' => false, 'message' => 'Instagram auth failed: could not exchange for long-lived token.'];
+            $frontendUrl = Config::get('constant.frontend_url').'/u/dashboard?linkResponse=' . urlencode(json_encode($linkResponse));
+            return redirect()->away($frontendUrl);
+        }
         $longLivedToken = $longData['access_token'];
-        $expiresIn = $longData['expires_in'];
+        $expiresIn = $longData['expires_in'] ?? 5184000;
 
         // Get Profile Details (Since they aren't in the token response)
         $profileData = Http::get("https://graph.instagram.com/me", [

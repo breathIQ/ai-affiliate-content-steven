@@ -44,6 +44,8 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'email_verified_at',
+        'stripe_customer_id',
+        'stripe_payment_method_id',
     ];
 
     /**
@@ -56,6 +58,11 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'auto_recharge_enabled' => 'boolean',
+            'credits_balance' => 'integer',
+            'auto_recharge_threshold' => 'integer',
+            'auto_recharge_topup_credits' => 'integer',
+            'auto_recharge_price_cents' => 'integer',
         ];
     }
 
@@ -64,7 +71,7 @@ class User extends Authenticatable
     public function getAvatarUrlAttribute()
     {
         // return $this->avatar ? asset(Storage::url($this->avatar)) : asset(Storage::url('uploads/avatars/dummy_user.png'));
-        return $this->avatar ? Config::get('constant.frontend_url').'/storage/'.$this->avatar : Config::get('constant.frontend_url').'/storage/uploads/avatars/dummy_user.png';
+        return $this->avatar ? Config::get('constant.media_base_url').config('constant.media_base_path').$this->avatar : Config::get('constant.media_base_url').config('constant.media_base_path').'uploads/avatars/dummy_user.png';
     }
 
     public function role()
@@ -104,5 +111,19 @@ class User extends Authenticatable
         return $this->hasOne(TotalClickByUser::class, 'user_id');
     }
 
+    public function creditTransactions()
+    {
+        return $this->hasMany(CreditTransaction::class);
+    }
+
+    public function heygenGenerations()
+    {
+        return $this->hasMany(HeygenGeneration::class);
+    }
+
+    public function grokVideoGenerations()
+    {
+        return $this->hasMany(GrokVideoGeneration::class);
+    }
 
 }

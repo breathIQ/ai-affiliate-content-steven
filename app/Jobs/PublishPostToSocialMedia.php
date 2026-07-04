@@ -175,7 +175,7 @@ class PublishPostToSocialMedia implements ShouldQueue
         // $url = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/PNG_Test.png/500px-PNG_Test.png?20260224095916";
         //  $url = "https://co2body.com/storage/".$media->media_path;
         
-        $url = Config::get('constant.frontend_url') . '/storage/'.$media->media_path;
+        $url = Config::get('constant.media_base_url') . config('constant.media_base_path').$media->media_path;
         \Log::info("IG media url--le: ".$url);
     
         $params = [
@@ -479,7 +479,11 @@ class PublishPostToSocialMedia implements ShouldQueue
         return $instagramAccount;
     }
 
-    private function waitForIgContainer($containerId, $token, $maxAttempts = 10)
+    // 60 attempts at 2s = up to 2 minutes. Images finish almost instantly so
+    // this doesn't slow them down, but real videos need real transcoding
+    // time on Instagram's side - 10 attempts (20s) was only ever enough for
+    // images and silently failed every video post.
+    private function waitForIgContainer($containerId, $token, $maxAttempts = 60)
     {
         $attempts = 0;
 
@@ -532,13 +536,13 @@ class PublishPostToSocialMedia implements ShouldQueue
                 $localPath = Storage::disk('public')->path($media->media_path);
                 $webpData = $this->convertToWebp($localPath);
                 // $images[] = asset('storage/posts/temp/' . $webpData['filename']);
-                $images[] = Config::get('constant.frontend_url') . '/storage/posts/temp/' . $webpData['filename'];
+                $images[] = Config::get('constant.media_base_url') . config('constant.media_base_path').'posts/temp/' . $webpData['filename'];
                 $tempFiles[] = $webpData['full_path']; // Track for cleanup
             }
 
             if ($media->media_type === 'video') {
                 // $videos[] = Storage::disk('public')->path($media->media_path);
-                $videos[] = Config::get('constant.frontend_url') . '/storage/' . $media->media_path;
+                $videos[] = Config::get('constant.media_base_url') . config('constant.media_base_path') . $media->media_path;
                 
             }
         }

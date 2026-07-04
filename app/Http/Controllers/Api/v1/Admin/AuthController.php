@@ -239,7 +239,7 @@ class AuthController extends ResponseController
         try {
             $user = Auth::user();
             // $user->avatar = isset($user->avatar) ? asset(Storage::url($user->avatar)) : null;
-            $user->avatar = isset($user->avatar) ?  Config::get('constant.frontend_url').'/storage/'.$user->avatar : null; 
+            $user->avatar = isset($user->avatar) ?  Config::get('constant.media_base_url').config('constant.media_base_path').$user->avatar : null; 
             return $this->sendResponse($user, 'User profile fetched successfully', 200);
         } catch (\Exception $e) {
             return $this->sendError('Something went wrong', [], 500);

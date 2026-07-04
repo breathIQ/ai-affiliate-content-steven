@@ -31,11 +31,11 @@ class StorePostRequest extends FormRequest
             'script' => 'nullable|string',
 
             'media_assets' => 'required|in:single,carousel',
-            'status' => 'required|in:published,failed,processing',
+            'status' => 'required|in:draft,scheduled,published,failed,processing',
 
             'ai_model' => 'nullable|string',
             'ai_prompt' => 'nullable|string',
-            'scheduled_at' => 'nullable|date',
+            'scheduled_at' => 'required_if:status,scheduled|nullable|date|after:now',
 
             'media' => 'nullable|array',
             // 'media.*.file' => 'required|file|mimes:jpg,jpeg,png,gif,mp4,mov,avi,webm|max:51200',
@@ -64,7 +64,7 @@ class StorePostRequest extends FormRequest
 
             'hashtags' => 'nullable|string',
 
-            'platforms' => 'required|array',
+            'platforms' => 'required_unless:status,draft|array',
             'platforms.*' => 'in:instagram,tiktok',
             
             'content_disclose' => 'required_if:platform,tiktok',

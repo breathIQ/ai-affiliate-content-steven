@@ -103,7 +103,7 @@ class UserDashboardController extends ResponseController
                 ->map(function ($post) {
                     $media = $post->media->sortBy('media_order')->first();
                     // $mediaUrl = $media ? asset(Storage::url($media->media_path)) : null;
-                    $mediaUrl = $media ? Config::get('constant.frontend_url').'/storage/'.$media->media_path : null;
+                    $mediaUrl = $media ? Config::get('constant.media_base_url').config('constant.media_base_path').$media->media_path : null;
                     $media_type = $media ? $media->media_type : null;
                     // Parse hashtags count
                     $hashtagsCount = 0;
@@ -136,7 +136,7 @@ class UserDashboardController extends ResponseController
             //Book URL
             $file = File::first();
             // $book_url = $file ? asset(Storage::url($file->file_path)) : null;
-            $book_url = $file ? Config::get('constant.frontend_url').'/storage/'.$file->file_path : null;
+            $book_url = $file ? Config::get('constant.media_base_url').config('constant.media_base_path').$file->file_path : null;
             //Social account
             $instagram = $user->socialAccounts->where('provider', 'instagram')->first();
             $tiktok = $user->socialAccounts->where('provider', 'tiktok')->first();

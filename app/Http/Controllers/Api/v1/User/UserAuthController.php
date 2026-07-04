@@ -282,7 +282,7 @@ class UserAuthController extends ResponseController
                 'name' => $user->name,
                 'email' => $user->email,
                 // 'avatar' => $user->avatar ? asset(Storage::url($user->avatar)) : null,
-                 'avatar' => $user->avatar ? Config::get('constant.frontend_url').'/storage/'.$user->avatar : null,
+                 'avatar' => $user->avatar ? Config::get('constant.media_base_url').config('constant.media_base_path').$user->avatar : null,
                 'affiliate_id' => $user->affiliate_id ?? '', // Assuming this exists or is username
                 'affiliate_link' => 'https://co2body.com/' . ($user->affiliate_id ?? $user->username ?? $user->id), // Example format
                 'other_affiliate_id' => $user->other_affiliate_id,

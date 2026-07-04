@@ -25,7 +25,7 @@ class FileController extends ResponseController
                 return $this->sendError('File data not found.', [], 500);
             }
             // $file['full_path'] = asset(Storage::url($file->file_path));
-            $file['full_path'] = Config::get('constant.frontend_url').'/storage/'.$file->file_path;
+            $file['full_path'] = Config::get('constant.media_base_url').config('constant.media_base_path').$file->file_path;
             return $this->sendResponse($file, 'File get successfully.', 200);
 
         } catch (\Exception $e) {

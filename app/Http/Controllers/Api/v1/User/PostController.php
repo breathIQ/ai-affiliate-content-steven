@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Services\{SocialTokenService};
+use App\Services\PostMediaService;
 use App\Jobs\PublishPostToSocialMedia;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Config;
 
 class PostController extends ResponseController
 {
+    public function __construct(protected PostMediaService $postMedia) {}
+
     /**
      * Display a listing of the resource.
      */
@@ -48,7 +51,7 @@ class PostController extends ResponseController
                 // Get primary media
                 $media = $post->media->sortBy('media_order')->first();
                 // $mediaUrl = $media ? asset(Storage::url($media->media_path)) : null;
-                $mediaUrl = $media ? Config::get('constant.frontend_url').'/storage/'.$media->media_path : null;
+                $mediaUrl = $media ? Config::get('constant.media_base_url').config('constant.media_base_path').$media->media_path : null;
                 $media_type = $media ? $media->media_type : null;
                 // Parse hashtags
                 $hashtagsCount = 0;
@@ -73,6 +76,8 @@ class PostController extends ResponseController
                     'ai_generated' => true,
                     // 'status' => $post->status !='published' ? 'Failed' : 'Published',
                     'status' => $post->status,
+                    'published_at' => $post->published_at,
+                    'scheduled_at' => $post->scheduled_at,
                     'created_at' => $post->created_at->format('M d, Y')
                 ];
             });
@@ -112,7 +117,7 @@ class PostController extends ResponseController
                     'id' => $m->id,
                     'media_type' => $m->media_type,
                     // 'url' => asset(Storage::url($m->media_path)),
-                    'url' => Config::get('constant.frontend_url').'/storage/'.$m->media_path,
+                    'url' => Config::get('constant.media_base_url').config('constant.media_base_path').$m->media_path,
                     'order' => $m->media_order
                 ];
             });
@@ -204,6 +209,9 @@ class PostController extends ResponseController
 
         return DB::transaction(function () use ($request,$user,$chapterName) {
 
+            $isDraft = $request->status === 'draft';
+            $isScheduled = $request->status === 'scheduled' && $request->filled('scheduled_at');
+
             // 1. Create Post
             $post = Post::create([
                 'user_id'      => $user->id,
@@ -211,169 +219,20 @@ class PostController extends ResponseController
                 'caption'      => $request->caption,
                 // 'script'       => $request->script,
                 'media_assets'    => $request->media_assets,
-                'status'       => 'processing',
+                'status'       => $isDraft ? 'draft' : ($isScheduled ? 'scheduled' : 'processing'),
                 'ai_model'     => $request->ai_model,
                 'ai_prompt'     => $request->ai_prompt,
+                'scheduled_at' => $isScheduled ? $request->scheduled_at : null,
                 // 'published_at'=> $request->status === 'published' ? now() : null,
                  'published_at'=> null,
                 'hastag' => $request->hashtags,
-                'affiliate_url' => $user->amazon_link,
+                'affiliate_url' => $user->amazon_link ?: env('AMAZON_URL'),
                 'chapter_name' => $chapterName->chapter,
                 'chapter_title' => $chapterName->chapter_title,
             ]);
 
             // 2. Media (File Upload)
-            if ($request->input('media')) {
-                foreach ($request->input('media') as $index => $mediaItem) {
-
-                    $mediaType = null;
-                    $path = null;
-
-                    // $file = $mediaItem['file'] ?? null;
-                    $uploadedFile = $request->file("media.$index.file");
-                    // Check if this file exists in the request
-                    if ($uploadedFile instanceof UploadedFile) {
-
-                        // $uploadedFile = $file;
-
-                        if (!$uploadedFile->isValid()) {
-                            continue; // skip invalid files
-                        }
-
-                        // Detect media type
-                        $mime = $uploadedFile->getMimeType();
-                        $mediaType = str_starts_with($mime, 'image/')
-                            ? 'image'
-                            : (str_starts_with($mime, 'video/') ? 'video' : null);
-
-                        if (!$mediaType) {
-                            continue; // skip unsupported files
-                        }
-
-                        // Store file
-                        $path = $uploadedFile->store('posts/media', 'public');
-                        \Log::info('file path--'.$path);
-                    //    dd($path) ;
-                    }elseif (filter_var($mediaItem['file'], FILTER_VALIDATE_URL)) {
-
-                        try {
-                            $response = Http::timeout(30)->get($mediaItem['file']);
-
-                            if (!$response->successful()) {
-                                continue;
-                            }
-
-                            $mime = $response->header('Content-Type');
-
-                            $mediaType = str_starts_with($mime, 'image/')
-                                ? 'image'
-                                : (str_starts_with($mime, 'video/') ? 'video' : null);
-
-                            if (!$mediaType) {
-                                continue;
-                            }
-
-                            // Extension from mime
-                            $extension = match ($mime) {
-                                'image/png' => 'png',
-                                'image/jpeg' => 'jpg',
-                                // 'image/webp' => 'webp',
-                                'video/mp4' => 'mp4',
-                                default => 'jpg',
-                            };
-
-                            $filename = Str::uuid() . '.' . $extension;
-                            $path = "posts/media/$filename";
-                            // dd($path);
-                            \Log::info('Url path--'.$path);
-                            // Use streaming for safety
-                            Storage::disk('public')->writeStream(
-                                $path,
-                                fopen($mediaItem['file'], 'r')
-                            );
-                            
-                            $tempUrl = $mediaItem['file'];
-                            if (str_contains($tempUrl, 'posts/temp/')) {
-                                // Get everything after 'storage/' to get the disk path
-                                $tempPath = 'posts/temp/' . basename($tempUrl);
-                                
-                                if (Storage::disk('public')->exists($tempPath)) {
-                                    Storage::disk('public')->delete($tempPath);
-                                    \Log::info('Deleted temporary file: ' . $tempPath);
-                                }
-                            }
-                            
-
-                        } catch (\Throwable $e) {
-                            \Log::error('Failed to download media: ' . $e->getMessage());
-                            continue; // skip failed downloads
-                        }
-                    }elseif (is_string($mediaItem['file']) && str_starts_with($mediaItem['file'], 'data:')) {
-                        
-                        preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/', $mediaItem['file'], $matches);
-
-                        if (count($matches) !== 3) {
-                            \Log::error('Invalid base64 data: ' . $mediaItem['file']);
-                            continue;
-                        }
-
-                        $mime = $matches[1];
-                        $base64Data = preg_replace('/\s+/', '', $matches[2]);
-
-                        $mediaType = str_starts_with($mime, 'image/')
-                            ? 'image'
-                            : (str_starts_with($mime, 'video/') ? 'video' : null);
-
-                        if (!$mediaType) {
-                            \Log::error('Unsupported media type: ' . $mime);
-                            continue;
-                        }
-
-                        $extension = match ($mime) {
-                            'image/png' => 'png',
-                            'image/jpeg' => 'jpg',
-                            // 'image/webp' => 'webp',
-                            default => 'jpg',
-                        };
-
-                        if (!$extension) {
-                            \Log::error("Unsupported mime type: $mime");
-                            continue;
-                        }
-                        $binaryData = base64_decode($base64Data, true);
-
-                        if ($binaryData === false) {
-                            \Log::error('Base64 decode failed for mediaItem');
-                            continue;
-                        }
-
-                        $filename = Str::uuid() . '.' . $extension;
-                        // $filename = Str::uuid() .'.jpg';
-                        $path = "posts/media/$filename";
-                        
-                        // Re-encode to a standard JPEG (Meta-safe)
-                        // $img = Image::read($binaryData)->encodeByExtension('jpg', quality: 90);
-
-
-                        Storage::disk('public')->put($path, $binaryData);
-                        
-                        // Storage::disk('public')->put($path, (string) $img);
-                        
-                        if (!Storage::disk('public')->exists($path)) {
-                            \Log::error("Failed to store base64 image at $path");
-                            continue;
-                        }
-                    }
-                    \Log::info('path--'.$path.'---mediaType--'.$mediaType);
-                    if ($path && $mediaType) {
-                        $post->media()->create([
-                            'media_type'  => $mediaType,
-                            'media_path'  => $path,
-                            'media_order' => $mediaItem['media_order'] ?? 0,
-                        ]);
-                    }
-                }
-            }
+            $this->postMedia->attachFromRequest($post, $request);
 
 
             // 3. Platforms (Publish Selection)
@@ -402,11 +261,121 @@ class PostController extends ResponseController
                 }
             }
 
+            if ($isDraft) {
+                return $this->sendResponse($post, 'Post saved to your library. Publish it whenever you\'re ready.', 201);
+            }
+
+            if ($isScheduled) {
+                return $this->sendResponse($post, 'Post scheduled for ' . $post->scheduled_at->format('M d, Y g:i A') . '.', 201);
+            }
+
             // Dispatch the Job to the background
             PublishPostToSocialMedia::dispatch($post);
-            
+
             return $this->sendResponse($post, 'Your content is being processed and may take a few minutes to appear on your profile.', 201);
-            
+
+        });
+    }
+
+    /**
+     * Replace a draft's media - used right after "Turn into Video" (or any
+     * future in-place regeneration) so a newly-generated, already-paid-for
+     * asset is persisted immediately instead of only living in the
+     * browser's memory until some later save action.
+     */
+    public function updateMedia(Post $post, Request $request)
+    {
+        $user = Auth::user();
+
+        if ($post->user_id != $user->id) {
+            return $this->sendError('Unauthorized', [], 403);
+        }
+
+        if ($post->status !== 'draft') {
+            return $this->sendError('Only draft posts can have their media replaced.', [], 422);
+        }
+
+        $request->validate([
+            'media' => 'required|array|min:1',
+        ]);
+
+        return DB::transaction(function () use ($post, $request) {
+            $this->postMedia->clearExisting($post);
+
+            $this->postMedia->attachFromRequest($post, $request);
+
+            if ($request->filled('caption')) {
+                $post->update(['caption' => $request->caption]);
+            }
+
+            if ($request->filled('media_assets')) {
+                $post->update(['media_assets' => $request->media_assets]);
+            }
+
+            return $this->sendResponse($post->fresh('media'), 'Draft updated', 200);
+        });
+    }
+
+    /**
+     * Publish an existing draft post to the selected platforms.
+     */
+    public function publish(Post $post, Request $request)
+    {
+        $user = Auth::user();
+
+        if ($post->user_id != $user->id) {
+            return $this->sendError('Unauthorized', [], 403);
+        }
+
+        $validated = $request->validate([
+            'platforms' => 'required|array',
+            'platforms.*' => 'in:instagram,tiktok',
+            'content_disclose' => 'nullable',
+            'brand_organic' => 'nullable',
+            'branded_content' => 'nullable',
+            'allow_comment' => 'nullable',
+            'allow_duet' => 'nullable',
+            'allow_stitch' => 'nullable',
+            'privacy_level' => 'nullable',
+            'scheduled_at' => 'nullable|date|after:now',
+        ]);
+
+        $isScheduled = $request->filled('scheduled_at');
+
+        return DB::transaction(function () use ($post, $request, $validated, $isScheduled) {
+            foreach ($validated['platforms'] as $platform) {
+                $tiktok_payload = $platform === 'tiktok' ? json_encode([
+                    'content_disclose' => $request->content_disclose,
+                    'brand_organic' => $request->brand_organic,
+                    'branded_content' => $request->branded_content,
+                    'allow_comment' => $request->allow_comment,
+                    'allow_duet' => $request->allow_duet,
+                    'allow_stitch' => $request->allow_stitch,
+                    'privacy_level' => $request->privacy_level,
+                ]) : null;
+
+                PostPlatform::create([
+                    'post_id' => $post->id,
+                    'platform' => $platform,
+                    'status' => 'processing',
+                    'tiktok_payload' => $tiktok_payload,
+                ]);
+            }
+
+            if ($isScheduled) {
+                $post->update([
+                    'status' => 'scheduled',
+                    'scheduled_at' => $validated['scheduled_at'],
+                ]);
+
+                return $this->sendResponse([], 'Post scheduled for ' . $post->scheduled_at->format('M d, Y g:i A') . '.', 200);
+            }
+
+            $post->update(['status' => 'processing']);
+
+            PublishPostToSocialMedia::dispatch($post);
+
+            return $this->sendResponse([], 'Your content is being processed and may take a few minutes to appear on your profile.', 200);
         });
     }
 

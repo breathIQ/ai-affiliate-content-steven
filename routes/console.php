@@ -13,3 +13,15 @@ Schedule::command('instagram:refresh-tokens')->dailyAt('02:00');
 Schedule::command('tiktok:refresh-tokens')
     ->everyThirtyMinutes()
     ->withoutOverlapping();
+
+Schedule::command('posts:publish-due')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+Schedule::command('heygen:poll-pending-publish')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+Schedule::command('grok:poll-pending-publish')
+    ->everyMinute()
+    ->withoutOverlapping();

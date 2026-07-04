@@ -12,6 +12,11 @@ class Post extends Model
         'media_assets','chapter_name','chapter_title'
     ];
 
+    protected $casts = [
+        'scheduled_at' => 'datetime',
+        'published_at' => 'datetime',
+    ];
+
     public function media()
     {
         return $this->hasMany(PostMedia::class);

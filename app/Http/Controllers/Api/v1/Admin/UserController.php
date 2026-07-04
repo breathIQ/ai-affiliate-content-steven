@@ -90,7 +90,7 @@ class UserController extends ResponseController
             $user_data['email'] =  $user->email;
             $user_data['status'] =  $user->status;
             // $user_data['avatar'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : null;
-            $user_data['avatar'] = isset($user->avatar) ? Config::get('constant.frontend_url').'/storage/'.$user->avatar : null;
+            $user_data['avatar'] = isset($user->avatar) ? Config::get('constant.media_base_url').config('constant.media_base_path').$user->avatar : null;
 
             return $this->sendResponse($user_data, 'user data get successfully.', 200);
         
@@ -130,7 +130,7 @@ class UserController extends ResponseController
             $data = $posts->getCollection()->map(function ($post) {
                 $media = $post->media->sortBy('media_order')->first();
                 // $mediaUrl = $media ? asset(Storage::url($media->media_path)) : null;
-                $mediaUrl = $media ? Config::get('constant.frontend_url').'/storage/'.$media->media_path : null;
+                $mediaUrl = $media ? Config::get('constant.media_base_url').config('constant.media_base_path').$media->media_path : null;
 
                 return [
                     'id' => $post->id,
@@ -179,7 +179,7 @@ class UserController extends ResponseController
                     'id' => $m->id,
                     'media_type' => $m->media_type,
                     // 'url' => asset(Storage::url($m->media_path)),
-                    'url' => Config::get('constant.frontend_url').'/storage/'.$m->media_path,
+                    'url' => Config::get('constant.media_base_url').config('constant.media_base_path').$m->media_path,
                     'order' => $m->media_order
                 ];
             });
@@ -191,7 +191,7 @@ class UserController extends ResponseController
                     'name' => $post->user->name,
                     'email' => $post->user->email,
                     // 'avatar' => $post->user->avatar ? asset(Storage::url($post->user->avatar)) : null,
-                    'avatar' =>  $post->user->avatar ? Config::get('constant.frontend_url').'/storage/'.$post->user->avatar : null,
+                    'avatar' =>  $post->user->avatar ? Config::get('constant.media_base_url').config('constant.media_base_path').$post->user->avatar : null,
                 ],
                 'chapter' => [
                     'id' => $post->chapter_id,
