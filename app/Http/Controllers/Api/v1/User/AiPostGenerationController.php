@@ -899,12 +899,14 @@ class AiPostGenerationController extends ResponseController
         set_time_limit(300);
         $apiKey = Config::get('constant.gemini_keys.key');
         $response = null;
-        // Stable models first - Google is deprecating the -preview image
-        // variants (kept as last resort).
+        // Pro (Nano Banana Pro) first - it's the only Gemini image model
+        // that renders on-image text reliably, which these posts depend on.
+        // Flash models are fallbacks if Pro errors; pricing in
+        // config/services.php (image_gemini_cost_cents) tracks Pro's cost.
         $models = [
+            'gemini-3-pro-image',
             'gemini-3.1-flash-image',
             'gemini-2.5-flash-image',
-            'gemini-3.1-flash-image-preview',
         ];
         foreach ($models as $model) {
             try{
