@@ -899,9 +899,12 @@ class AiPostGenerationController extends ResponseController
         set_time_limit(300);
         $apiKey = Config::get('constant.gemini_keys.key');
         $response = null;
+        // Stable models first - Google is deprecating the -preview image
+        // variants (kept as last resort).
         $models = [
+            'gemini-3.1-flash-image',
+            'gemini-2.5-flash-image',
             'gemini-3.1-flash-image-preview',
-            // 'gemini-2.5-flash-image'
         ];
         foreach ($models as $model) {
             try{
@@ -999,6 +1002,23 @@ class AiPostGenerationController extends ResponseController
                     
                 }
                 
+                $data = $response->json() ?: [];
+                $errorMessage = $data['error']['message'] ?? 'Gemini API error';
+                \Log::error('Gemini image API error', ['status' => $status, 'model' => $model, 'error' => $errorMessage]);
+
+                // Free-tier API keys have quota limit 0 for image models -
+                // image generation simply isn't included in Google's free
+                // tier, so retrying or switching models can never help.
+                // Surface the real problem instead of "server busy".
+                if ($status === 429 && str_contains($errorMessage, 'free_tier')) {
+                    return [
+                        'success' => false,
+                        'image_url' => '',
+                        'error' => 'Gemini image generation needs a paid Google AI plan - the current API key is free-tier (image quota is 0). Use the OpenAI engine, or upgrade the key at aistudio.google.com.',
+                        'model_used' => $model
+                    ];
+                }
+
                 $retryDelay = 2;
                 //RETRYABLE SERVER ERRORS → try next model
                 if (in_array($status, [429, 500, 502, 503, 504])) {
@@ -1008,12 +1028,10 @@ class AiPostGenerationController extends ResponseController
                     continue;
                 }
                 //  FATAL ERRORS → stop immediately
-                $errorMessage = $data['error']['message'] ?? 'Gemini API error';
-
                 return [
                     'success' => false,
                     'image_url' => '',
-                    'error' => 'Currently this model server is down. Try another AI model or upload manually',
+                    'error' => "Gemini image error: {$errorMessage}",
                     'model_used' => $model
                 ];
             } catch (\Exception $e) {
