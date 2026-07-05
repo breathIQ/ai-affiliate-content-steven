@@ -146,6 +146,7 @@ class PostController extends ResponseController
                 'hashtags_count' => $post->hastag ? count(json_decode($post->hastag, true) ?: explode(',', $post->hastag)) : 0,
                 'ai_model' => $post->ai_model,
                 'ai_prompt' => $post->ai_prompt,
+                'ai_generation_params' => $post->ai_generation_params ? json_decode($post->ai_generation_params, true) : null,
                 'status' => $post->status,
                 'media_assets' => $post->media_assets,
                 'media' => $formattedMedia,
@@ -222,6 +223,7 @@ class PostController extends ResponseController
                 'status'       => $isDraft ? 'draft' : ($isScheduled ? 'scheduled' : 'processing'),
                 'ai_model'     => $request->ai_model,
                 'ai_prompt'     => $request->ai_prompt,
+                'ai_generation_params' => $request->ai_generation_params,
                 'scheduled_at' => $isScheduled ? $request->scheduled_at : null,
                 // 'published_at'=> $request->status === 'published' ? now() : null,
                  'published_at'=> null,
@@ -300,7 +302,10 @@ class PostController extends ResponseController
         ]);
 
         return DB::transaction(function () use ($post, $request) {
-            $this->postMedia->clearExisting($post);
+            // keep_files: remove the old media rows but leave their files
+            // on disk - set when swapping an image for a generated video,
+            // so "keep the image instead" can re-attach the original later.
+            $this->postMedia->clearExisting($post, ! $request->boolean('keep_files'));
 
             $this->postMedia->attachFromRequest($post, $request);
 

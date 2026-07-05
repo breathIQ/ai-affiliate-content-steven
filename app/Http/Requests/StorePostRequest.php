@@ -35,6 +35,7 @@ class StorePostRequest extends FormRequest
 
             'ai_model' => 'nullable|string',
             'ai_prompt' => 'nullable|string',
+            'ai_generation_params' => 'nullable|json',
             'scheduled_at' => 'required_if:status,scheduled|nullable|date|after:now',
 
             'media' => 'nullable|array',

@@ -188,15 +188,19 @@ class PostMediaService
     }
 
     /**
-     * Delete all existing media rows+files for a post - used before
-     * replacing a draft's media (updateMedia) so nothing orphaned is left
-     * on disk.
+     * Delete all existing media rows (and by default their files) for a
+     * post - used before replacing a draft's media (updateMedia).
+     * $deleteFiles=false keeps the files on disk while removing the rows:
+     * used when turning an image into a video, so "keep the image
+     * instead" can still re-attach the original image by URL afterwards.
      */
-    public function clearExisting(Post $post): void
+    public function clearExisting(Post $post, bool $deleteFiles = true): void
     {
-        foreach ($post->media as $media) {
-            if (Storage::disk('public')->exists($media->media_path)) {
-                Storage::disk('public')->delete($media->media_path);
+        if ($deleteFiles) {
+            foreach ($post->media as $media) {
+                if (Storage::disk('public')->exists($media->media_path)) {
+                    Storage::disk('public')->delete($media->media_path);
+                }
             }
         }
 
