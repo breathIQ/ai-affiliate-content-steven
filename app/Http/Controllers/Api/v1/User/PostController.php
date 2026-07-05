@@ -329,7 +329,7 @@ class PostController extends ResponseController
 
         $validated = $request->validate([
             'platforms' => 'required|array',
-            'platforms.*' => 'in:instagram,tiktok',
+            'platforms.*' => 'in:instagram,instagram_story,tiktok',
             'content_disclose' => 'nullable',
             'brand_organic' => 'nullable',
             'branded_content' => 'nullable',

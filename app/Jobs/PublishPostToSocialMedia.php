@@ -51,16 +51,23 @@ class PublishPostToSocialMedia implements ShouldQueue
                
             $platform = $platformRecord->platform;
             \Log::info("Social account details for: {$platform}");
-                $account = $user->socialAccounts()->where('provider', $platformRecord->platform)->first();
-                \Log::info("Social account details for:= {$platformRecord->platform}", [$account]);
+                // Stories publish through the user's regular Instagram
+                // connection - there's no separate "story account".
+                $provider = $platform === 'instagram_story' ? 'instagram' : $platform;
+                $account = $user->socialAccounts()->where('provider', $provider)->first();
+                \Log::info("Social account details for:= {$provider}", [$account]);
                 if (!$account) {
-                    throw new Exception("Social account for {$platformRecord->platform} not linked.");
+                    throw new Exception("Social account for {$provider} not linked.");
                 }
 
                 if ($platform == 'instagram') {
                     \Log::info("Publishing to instagram for Post");
 
                     $this->publishToInstagram($account);
+                } elseif ($platform === 'instagram_story') {
+                    \Log::info("Publishing to instagram story for Post {$this->post->id}");
+
+                    $this->publishInstagramStories($account);
                 } elseif ($platform === 'tiktok') {
                     \Log::info("Publishing to TikTok for Post {$this->post->id}");
                     //$this->publishToTikTok($account);
@@ -206,6 +213,52 @@ class PublishPostToSocialMedia implements ShouldQueue
         return $response->json()['id'];
     }
   
+
+    /**
+     * Publish this post's media as Instagram Stories. Stories have no
+     * carousel format and ignore captions entirely (Meta shows no caption
+     * on a story, and link stickers can't be added via the API), so each
+     * media item becomes its own 24-hour story frame, published
+     * sequentially so multi-image posts play in order.
+     */
+    private function publishInstagramStories($account)
+    {
+        $mediaItems = $this->post->media()->orderBy('media_order')->get();
+
+        sleep(2);
+
+        $token = $account->access_token;
+        $igId = $account->provider_user_id;
+
+        foreach ($mediaItems as $item) {
+            $url = Config::get('constant.media_base_url') . config('constant.media_base_path') . $item->media_path;
+
+            $params = [
+                'access_token' => $token,
+                'media_type' => 'STORIES',
+            ];
+
+            if ($item->media_type === 'video') {
+                $params['video_url'] = $url;
+            } else {
+                $params['image_url'] = $url;
+            }
+
+            \Log::info('IG story params', $params);
+
+            $response = Http::post("https://graph.instagram.com/v19.0/{$igId}/media", $params);
+            \Log::info("IG story create container response: " . $response->body());
+
+            if ($response->failed()) {
+                throw new Exception("IG Story Container Error: " . $response->body());
+            }
+
+            $containerId = $response->json()['id'];
+
+            $this->waitForIgContainer($containerId, $token);
+            $this->finalizeIgPublish($igId, $token, $containerId);
+        }
+    }
 
     private function createIgCarouselMaster($igId, $token, $itemIds)
     {

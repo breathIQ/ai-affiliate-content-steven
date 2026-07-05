@@ -65,7 +65,7 @@ class StorePostRequest extends FormRequest
             'hashtags' => 'nullable|string',
 
             'platforms' => 'required_unless:status,draft|array',
-            'platforms.*' => 'in:instagram,tiktok',
+            'platforms.*' => 'in:instagram,instagram_story,tiktok',
             
             'content_disclose' => 'required_if:platform,tiktok',
             'brand_organic' => 'required_if:platform,tiktok',

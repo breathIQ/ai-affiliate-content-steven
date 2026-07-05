@@ -50,7 +50,7 @@ class GrokVideoController extends ResponseController
             'caption' => 'nullable|string',
             'scheduled_at' => 'required_if:publish_action,schedule|nullable|date|after:now',
             'platforms' => 'required_if:publish_action,publish_now,schedule|nullable|array',
-            'platforms.*' => 'in:instagram,tiktok',
+            'platforms.*' => 'in:instagram,instagram_story,tiktok',
             'content_disclose' => 'nullable',
             'brand_organic' => 'nullable',
             'branded_content' => 'nullable',
