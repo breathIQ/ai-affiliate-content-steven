@@ -245,7 +245,15 @@ class HeygenController extends ResponseController
                 ->filter()
                 ->values();
 
+            // The account's own HeyGen "My avatars" (photo avatar groups) -
+            // already merged into $avatars for search, surfaced separately
+            // so the picker can show them as their own section.
+            $myAvatars = collect($avatars)
+                ->filter(fn ($a) => $a['is_my_avatar'] ?? false)
+                ->values();
+
             return $this->sendResponse([
+                'my_avatars' => $myAvatars,
                 'personal_favorites' => $personalFavorites,
                 'global_favorites' => $globalFavorites,
                 'recently_used' => $recentlyUsed,

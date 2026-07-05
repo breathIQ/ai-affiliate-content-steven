@@ -39,7 +39,9 @@ class HeygenService
      */
     public function listAvatars(): array
     {
-        return Cache::remember('heygen_avatars', now()->addDay(), function () {
+        // Cache key versioned (v2) so deploys that change the shape don't
+        // serve a stale day-old structure.
+        return Cache::remember('heygen_avatars_v2', now()->addDay(), function () {
             $response = Http::withHeaders($this->headers())
                 ->timeout(90)
                 ->get("{$this->baseUrl}/v2/avatars");
@@ -60,7 +62,7 @@ class HeygenService
             // options for video generation.
             $avatars = array_filter($avatars, fn ($a) => ! str_starts_with($a['avatar_name'], 'Steven Scott'));
 
-            return array_map(fn ($a) => [
+            $stock = array_map(fn ($a) => [
                 'avatar_id' => $a['avatar_id'],
                 'avatar_name' => $a['avatar_name'],
                 'gender' => $a['gender'],
@@ -68,7 +70,90 @@ class HeygenService
                 'preview_video_url' => $a['preview_video_url'],
                 'premium' => $a['premium'],
             ], array_values($avatars));
+
+            // The account's own "My avatars" (photo avatar groups) live
+            // behind a different endpoint and never show up in /v2/avatars.
+            // Put them first so they're findable in search and can be
+            // surfaced as their own picker section.
+            return array_merge($this->listMyAvatarLooks(), $stock);
         });
+    }
+
+    /**
+     * Looks from the account's avatar groups ("My avatars" in HeyGen's UI:
+     * uploaded photo avatars, Design-with-AI generations, and clones).
+     * Flattened into the same shape as stock avatars, flagged
+     * is_my_avatar so the controller/frontend can group them. Failures
+     * return [] rather than breaking the whole picker over a side list.
+     */
+    protected function listMyAvatarLooks(): array
+    {
+        try {
+            $groupsResponse = Http::withHeaders($this->headers())
+                ->timeout(60)
+                ->get("{$this->baseUrl}/v2/avatar_group.list", ['include_public' => 'false']);
+
+            if ($groupsResponse->failed()) {
+                Log::error('HeyGen avatar_group.list failed', ['status' => $groupsResponse->status(), 'body' => $groupsResponse->body()]);
+                return [];
+            }
+
+            $groups = collect($groupsResponse->json('data.avatar_group_list') ?? [])
+                // Same rule as stock: the owner's personal clone groups
+                // aren't offered as generic options.
+                ->filter(fn ($g) => ! str_starts_with($g['name'] ?? '', 'Steven Scott'))
+                ->values();
+
+            if ($groups->isEmpty()) {
+                return [];
+            }
+
+            $responses = Http::pool(fn ($pool) => $groups->map(
+                fn ($g) => $pool->as($g['id'])
+                    ->withHeaders($this->headers())
+                    ->timeout(30)
+                    ->get("{$this->baseUrl}/v2/avatar_group/{$g['id']}/avatars")
+            )->all());
+
+            $looks = [];
+
+            foreach ($groups as $group) {
+                $res = $responses[$group['id']] ?? null;
+
+                if (! $res instanceof \Illuminate\Http\Client\Response || $res->failed()) {
+                    continue;
+                }
+
+                $groupLooks = $res->json('data.avatar_list') ?? [];
+
+                foreach ($groupLooks as $look) {
+                    // Some looks come back incomplete (mid-processing or
+                    // failed uploads) - skip anything without an id.
+                    if (empty($look['id'])) {
+                        continue;
+                    }
+
+                    $lookName = trim($look['name'] ?? '');
+
+                    $looks[] = [
+                        'avatar_id' => $look['id'],
+                        'avatar_name' => count($groupLooks) > 1 && $lookName !== '' && $lookName !== $group['name']
+                            ? "{$group['name']} - {$lookName}"
+                            : $group['name'],
+                        'gender' => null,
+                        'preview_image_url' => $look['image_url'] ?? null,
+                        'preview_video_url' => $look['motion_preview_url'] ?? null,
+                        'premium' => false,
+                        'is_my_avatar' => true,
+                    ];
+                }
+            }
+
+            return $looks;
+        } catch (\Throwable $e) {
+            Log::error('HeyGen my-avatar looks failed', ['error' => $e->getMessage()]);
+            return [];
+        }
     }
 
     protected function coverImageUrl(): string
