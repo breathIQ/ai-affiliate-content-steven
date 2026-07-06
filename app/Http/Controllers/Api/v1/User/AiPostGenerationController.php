@@ -163,9 +163,9 @@ class AiPostGenerationController extends ResponseController
                 // straight to image generation using it, no further text call.
                 $response = $this->buildContentResponse($request->input('approved_text'), $modelChoice, $imageEngine, $chapter, $postType, $slidesCount, $design, $textFormat);
             } elseif (str_contains($modelChoice, 'gpt')) {
-                $response = $this->generateWithOpenAI('gpt-5.4-mini', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+                $response = $this->generateWithOpenAI('gpt-5.4', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
             } elseif (str_contains($modelChoice, 'claude')) {
-                $response = $this->generateWithClaude('claude-haiku-4-5', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
+                $response = $this->generateWithClaude('claude-sonnet-5', $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
             }else{
                 $response = $this->generateWithGemini($modelChoice, $finalPrompt,$chapter,$postType,$slidesCount,$design,$textFormat);
             }
@@ -291,9 +291,9 @@ class AiPostGenerationController extends ResponseController
     private function draftStructuredText(string $modelChoice, string $prompt, $chapter, string $textFormat): array
     {
         if (str_contains($modelChoice, 'gpt')) {
-            return $this->fetchOpenAIText('gpt-5.4-mini', $prompt, $chapter, $textFormat);
+            return $this->fetchOpenAIText('gpt-5.4', $prompt, $chapter, $textFormat);
         } elseif (str_contains($modelChoice, 'claude')) {
-            return $this->fetchClaudeText('claude-haiku-4-5', $prompt, $chapter, $textFormat);
+            return $this->fetchClaudeText('claude-sonnet-5', $prompt, $chapter, $textFormat);
         }
 
         return $this->fetchGeminiText($modelChoice, $prompt, $chapter, $textFormat);
@@ -406,7 +406,7 @@ class AiPostGenerationController extends ResponseController
             'x-api-key' => Config::get('constant.claud_keys.key'),
             'anthropic-version' => '2023-06-01',
             'content-type' => 'application/json',
-        ])->post('https://api.anthropic.com/v1/messages', [
+        ])->timeout(120)->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
             'max_tokens' => 2048,
             'system' => $systemInstruction,
@@ -446,8 +446,8 @@ class AiPostGenerationController extends ResponseController
         $response = Http::withHeaders([
             'x-goog-api-key' => $apiKey,
             'Content-Type'  => 'application/json',
-        ])->post(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent',
+        ])->timeout(120)->post(
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-latest:generateContent',
             [
                 'system_instruction' => [
                     'parts' => [

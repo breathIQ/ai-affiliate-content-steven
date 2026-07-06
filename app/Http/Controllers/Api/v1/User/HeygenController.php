@@ -479,9 +479,9 @@ class HeygenController extends ResponseController
             $modelChoice = $request->model;
 
             if (str_contains($modelChoice, 'gpt')) {
-                $script = $this->fetchOpenAIScript('gpt-5.4-mini', $prompt, $chapter, $wordTarget);
+                $script = $this->fetchOpenAIScript('gpt-5.4', $prompt, $chapter, $wordTarget);
             } elseif (str_contains($modelChoice, 'claude')) {
-                $script = $this->fetchClaudeScript('claude-haiku-4-5', $prompt, $chapter, $wordTarget);
+                $script = $this->fetchClaudeScript('claude-sonnet-5', $prompt, $chapter, $wordTarget);
             } else {
                 $script = $this->fetchGeminiScript($modelChoice, $prompt, $chapter, $wordTarget);
             }
@@ -535,7 +535,7 @@ Chapter content: '{$chapter->content}'";
             'x-api-key' => Config::get('constant.claud_keys.key'),
             'anthropic-version' => '2023-06-01',
             'content-type' => 'application/json',
-        ])->post('https://api.anthropic.com/v1/messages', [
+        ])->timeout(120)->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
             'max_tokens' => 1024,
             'system' => $this->scriptSystemInstruction($chapter, $wordTarget),
@@ -563,8 +563,8 @@ Chapter content: '{$chapter->content}'";
         $response = Http::withHeaders([
             'x-goog-api-key' => Config::get('constant.gemini_keys.key'),
             'Content-Type' => 'application/json',
-        ])->post(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent',
+        ])->timeout(120)->post(
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-latest:generateContent',
             [
                 'system_instruction' => ['parts' => [['text' => $this->scriptSystemInstruction($chapter, $wordTarget)]]],
                 'contents' => [['role' => 'user', 'parts' => [['text' => $prompt]]]],
