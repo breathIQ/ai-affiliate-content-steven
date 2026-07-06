@@ -40,6 +40,17 @@ class HeygenService
     public const AVATAR_CACHE_KEY = 'heygen_avatars_v3';
 
     /**
+     * Public/community avatar groups adopted into this account's "My
+     * avatars" in HeyGen's UI. The avatar_group.list API only returns
+     * PRIVATE groups (include_public=true dumps the entire 550+ community
+     * catalog with no "added by me" flag), so adopted public groups have
+     * to be pinned here explicitly.
+     */
+    protected const ADOPTED_PUBLIC_GROUPS = [
+        '8af078aa4e034870a0056a23cfa396d8', // Morgan
+    ];
+
+    /**
      * Bust the cached avatar list - called whenever a user creates or
      * deletes a photo avatar so it shows up (or disappears) immediately
      * instead of after the daily cache expiry.
@@ -116,6 +127,14 @@ class HeygenService
                 ->filter(fn ($g) => ! str_starts_with($g['name'] ?? '', 'Steven Scott'))
                 ->values();
 
+            // Adopted public groups aren't in the private list - pin them
+            // in (name resolved from their looks below).
+            foreach (self::ADOPTED_PUBLIC_GROUPS as $publicGroupId) {
+                if (! $groups->contains(fn ($g) => ($g['id'] ?? '') === $publicGroupId)) {
+                    $groups->push(['id' => $publicGroupId, 'name' => null]);
+                }
+            }
+
             if ($groups->isEmpty()) {
                 return [];
             }
@@ -146,12 +165,15 @@ class HeygenService
                     }
 
                     $lookName = trim($look['name'] ?? '');
+                    // Pinned public groups arrive without a name - fall
+                    // back to the look's own name.
+                    $groupName = $group['name'] ?? ($lookName !== '' ? $lookName : 'Avatar');
 
                     $looks[] = [
                         'avatar_id' => $look['id'],
-                        'avatar_name' => count($groupLooks) > 1 && $lookName !== '' && $lookName !== $group['name']
-                            ? "{$group['name']} - {$lookName}"
-                            : $group['name'],
+                        'avatar_name' => count($groupLooks) > 1 && $lookName !== '' && $lookName !== $groupName
+                            ? "{$groupName} - {$lookName}"
+                            : $groupName,
                         'gender' => null,
                         'preview_image_url' => $look['image_url'] ?? null,
                         'preview_video_url' => $look['motion_preview_url'] ?? null,
