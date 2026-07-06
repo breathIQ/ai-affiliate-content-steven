@@ -37,7 +37,7 @@ class HeygenService
      * almost never changes and the raw response is large; avoids hitting
      * HeyGen on every page load of the avatar picker.
      */
-    public const AVATAR_CACHE_KEY = 'heygen_avatars_v3';
+    public const AVATAR_CACHE_KEY = 'heygen_avatars_v4';
 
     /**
      * Featured public/community avatar groups. Their looks are treated
@@ -271,6 +271,10 @@ class HeygenService
                         'premium' => false,
                         'is_my_avatar' => (bool) $group['is_own'],
                         'is_community' => ! $group['is_own'],
+                        // HeyGen catalog category (PUBLIC / PUBLIC_PHOTO /
+                        // COMMUNITY_PHOTO / own types) - drives the Avatars
+                        // page tabs. Stock avatars have no group_type.
+                        'group_type' => $group['group_type'] ?? 'PINNED',
                         // Lets the controller scope user-created avatars to
                         // their creator (heygen_photo_avatars claims).
                         'group_id' => $group['id'],
