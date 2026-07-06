@@ -159,6 +159,11 @@ Route::group(['prefix' => 'v1/user'], function () {
         Route::get('/heygen/avatars', [HeygenController::class, 'avatars']);
         Route::post('/heygen/avatars/favorite', [HeygenController::class, 'toggleFavoriteAvatar']);
 
+        //*****************User photo avatars (selfie -> avatar)************* */
+        Route::post('/heygen/photo-avatars', [HeygenController::class, 'createPhotoAvatar'])->middleware('throttle:5,1');
+        Route::get('/heygen/photo-avatars', [HeygenController::class, 'listPhotoAvatars']);
+        Route::delete('/heygen/photo-avatars/{id}', [HeygenController::class, 'deletePhotoAvatar']);
+
         //*****************Grok Image-to-Video Generation************************** */
         Route::post('/grok/generate-video', [GrokVideoController::class, 'generate'])->middleware('throttle:10,1');
         Route::get('/grok/videos/{id}/status', [GrokVideoController::class, 'status']);

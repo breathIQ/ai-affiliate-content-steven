@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\v1\User;
 use App\Http\Controllers\Api\v1\ResponseController;
 use App\Models\Chapter;
 use App\Models\HeygenGeneration;
+use App\Models\HeygenPhotoAvatar;
 use App\Models\HeygenUserFavoriteAvatar;
 use App\Models\Post;
 use App\Services\CreditService;
@@ -202,6 +203,27 @@ class HeygenController extends ResponseController
         try {
             $avatars = $this->heygen->listAvatars();
 
+            // Per-user visibility: everyone shares one HeyGen account, so
+            // user-created photo avatars are claimed in
+            // heygen_photo_avatars - a claimed group is visible only to
+            // its creator, unclaimed groups (curated ones made directly in
+            // HeyGen's UI) stay visible to all. "deleted" tombstones
+            // (HeyGen refused the delete) are hidden from everyone.
+            $claimRows = HeygenPhotoAvatar::get(['group_id', 'user_id', 'status']);
+            $claims = $claimRows->pluck('user_id', 'group_id');
+            $tombstones = $claimRows->where('status', 'deleted')->pluck('group_id')->flip();
+            $avatars = array_values(array_filter($avatars, function ($a) use ($claims, $tombstones) {
+                if (! ($a['is_my_avatar'] ?? false)) {
+                    return true;
+                }
+                $groupId = $a['group_id'] ?? '';
+                if (isset($tombstones[$groupId])) {
+                    return false;
+                }
+                $owner = $claims[$groupId] ?? null;
+                return $owner === null || (int) $owner === (int) Auth::id();
+            }));
+
             // Recently-used avatars, most recent first - derived from past
             // generations' request_payload rather than a separate table,
             // since avatar_id is already recorded there whenever one was
@@ -262,6 +284,116 @@ class HeygenController extends ResponseController
         } catch (\Throwable $e) {
             return $this->sendError('Could not retrieve avatars', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Create a HeyGen photo avatar from a photo the user uploads of
+     * themselves. The avatar lands in the shared HeyGen account but is
+     * claimed to this user (see avatars() scoping). Capped at 3 live
+     * avatars per user, consent checkbox required.
+     */
+    public function createPhotoAvatar(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:60',
+            'photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240',
+            'consent' => 'required|accepted',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendValidationError($validator->errors());
+        }
+
+        $liveCount = HeygenPhotoAvatar::where('user_id', Auth::id())
+            ->whereIn('status', ['pending', 'ready'])
+            ->count();
+
+        if ($liveCount >= 3) {
+            return $this->sendError('You can have up to 3 avatars. Delete one to create another.', [], 422);
+        }
+
+        try {
+            $file = $request->file('photo');
+            $imageKey = $this->heygen->uploadImageAsset($file->get(), $file->getMimeType());
+            $created = $this->heygen->createPhotoAvatarGroup($request->name, $imageKey);
+
+            $avatar = HeygenPhotoAvatar::create([
+                'user_id' => Auth::id(),
+                'group_id' => $created['group_id'],
+                'look_id' => $created['id'] ?? $created['group_id'],
+                'name' => $request->name,
+                'status' => ($created['status'] ?? 'pending') === 'completed' ? 'ready' : 'pending',
+                'preview_image_url' => $created['image_url'] ?? null,
+            ]);
+
+            $this->heygen->forgetAvatarCache();
+
+            return $this->sendResponse($avatar, 'Avatar is being created - it usually takes under a minute.', 201);
+        } catch (\Throwable $e) {
+            Log::error('Photo avatar creation failed', ['error' => $e->getMessage(), 'user_id' => Auth::id()]);
+            return $this->sendError('Could not create the avatar', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * This user's own photo avatars, refreshing any still-pending ones
+     * against HeyGen. Deleted tombstones stay hidden.
+     */
+    public function listPhotoAvatars(Request $request)
+    {
+        $avatars = HeygenPhotoAvatar::where('user_id', Auth::id())
+            ->where('status', '!=', 'deleted')
+            ->orderByDesc('id')
+            ->get();
+
+        foreach ($avatars->where('status', 'pending') as $avatar) {
+            try {
+                $looks = collect($this->heygen->groupLooks($avatar->group_id));
+                $look = $looks->firstWhere('id', $avatar->look_id) ?? $looks->first();
+
+                if (! $look) {
+                    continue;
+                }
+
+                if (! empty($look['workflow_error']) || ! empty($look['moderation_msg'])) {
+                    $avatar->update([
+                        'status' => 'failed',
+                        'error_message' => $look['moderation_msg'] ?: (is_array($look['workflow_error']) ? json_encode($look['workflow_error']) : $look['workflow_error']),
+                    ]);
+                } elseif (($look['status'] ?? '') === 'completed') {
+                    $avatar->update([
+                        'status' => 'ready',
+                        'look_id' => $look['id'],
+                        'preview_image_url' => $look['image_url'] ?? $avatar->preview_image_url,
+                    ]);
+                    $this->heygen->forgetAvatarCache();
+                }
+            } catch (\Throwable $e) {
+                Log::error('Photo avatar status refresh failed', ['id' => $avatar->id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        return $this->sendResponse($avatars, 'Photo avatars retrieved successfully', 200);
+    }
+
+    /**
+     * Delete one of this user's photo avatars. If HeyGen refuses the
+     * delete, the row stays as a hidden tombstone so the group can never
+     * leak into other users' pickers as "unclaimed".
+     */
+    public function deletePhotoAvatar(Request $request, int $id)
+    {
+        $avatar = HeygenPhotoAvatar::where('user_id', Auth::id())->findOrFail($id);
+
+        if ($this->heygen->deleteAvatarGroup($avatar->group_id)) {
+            $avatar->delete();
+        } else {
+            $avatar->update(['status' => 'deleted']);
+        }
+
+        $this->heygen->forgetAvatarCache();
+
+        return $this->sendResponse([], 'Avatar deleted', 200);
     }
 
     /**

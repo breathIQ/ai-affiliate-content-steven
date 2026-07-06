@@ -37,11 +37,23 @@ class HeygenService
      * almost never changes and the raw response is large; avoids hitting
      * HeyGen on every page load of the avatar picker.
      */
+    public const AVATAR_CACHE_KEY = 'heygen_avatars_v3';
+
+    /**
+     * Bust the cached avatar list - called whenever a user creates or
+     * deletes a photo avatar so it shows up (or disappears) immediately
+     * instead of after the daily cache expiry.
+     */
+    public function forgetAvatarCache(): void
+    {
+        Cache::forget(self::AVATAR_CACHE_KEY);
+    }
+
     public function listAvatars(): array
     {
-        // Cache key versioned (v2) so deploys that change the shape don't
+        // Cache key versioned so deploys that change the shape don't
         // serve a stale day-old structure.
-        return Cache::remember('heygen_avatars_v2', now()->addDay(), function () {
+        return Cache::remember(self::AVATAR_CACHE_KEY, now()->addDay(), function () {
             $response = Http::withHeaders($this->headers())
                 ->timeout(90)
                 ->get("{$this->baseUrl}/v2/avatars");
@@ -145,6 +157,9 @@ class HeygenService
                         'preview_video_url' => $look['motion_preview_url'] ?? null,
                         'premium' => false,
                         'is_my_avatar' => true,
+                        // Lets the controller scope user-created avatars to
+                        // their creator (heygen_photo_avatars claims).
+                        'group_id' => $group['id'],
                     ];
                 }
             }
@@ -153,6 +168,92 @@ class HeygenService
         } catch (\Throwable $e) {
             Log::error('HeyGen my-avatar looks failed', ['error' => $e->getMessage()]);
             return [];
+        }
+    }
+
+    /**
+     * Upload an image to HeyGen's asset store and return its image_key -
+     * the identifier photo-avatar creation expects. This is the
+     * upload.heygen.com raw-binary endpoint, NOT /v3/assets (whose
+     * asset_id photo_avatar/avatar_group/create does not accept).
+     */
+    public function uploadImageAsset(string $contents, string $mime): string
+    {
+        $response = Http::withHeaders(['X-Api-Key' => $this->apiKey, 'Content-Type' => $mime])
+            ->withBody($contents, $mime)
+            ->timeout(120)
+            ->post('https://upload.heygen.com/v1/asset');
+
+        if ($response->failed() || ! $response->json('data.image_key')) {
+            Log::error('HeyGen image asset upload failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('HeyGen image upload failed: '.$response->body());
+        }
+
+        return $response->json('data.image_key');
+    }
+
+    /**
+     * Create a photo avatar group from an uploaded image. Returns the
+     * created look (id doubles as group_id for the first look); it starts
+     * status=pending and typically completes within seconds.
+     */
+    public function createPhotoAvatarGroup(string $name, string $imageKey): array
+    {
+        $response = Http::withHeaders($this->headers())
+            ->timeout(120)
+            ->post("{$this->baseUrl}/v2/photo_avatar/avatar_group/create", [
+                'name' => $name,
+                'image_key' => $imageKey,
+            ]);
+
+        if ($response->failed() || ! $response->json('data.group_id')) {
+            Log::error('HeyGen photo avatar group create failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('HeyGen avatar creation failed: '.($response->json('error.message') ?? $response->body()));
+        }
+
+        return $response->json('data');
+    }
+
+    /**
+     * Raw looks of one avatar group - used to poll a newly created photo
+     * avatar until its look reports completed (or a moderation/workflow
+     * failure).
+     */
+    public function groupLooks(string $groupId): array
+    {
+        $response = Http::withHeaders($this->headers())
+            ->timeout(30)
+            ->get("{$this->baseUrl}/v2/avatar_group/{$groupId}/avatars");
+
+        if ($response->failed()) {
+            throw new \RuntimeException('HeyGen group looks failed: '.$response->body());
+        }
+
+        return $response->json('data.avatar_list') ?? [];
+    }
+
+    /**
+     * Delete an avatar group on HeyGen's side. Returns whether HeyGen
+     * confirmed the delete - the caller keeps the claim row as a tombstone
+     * when this fails, so an undeleted group never leaks back into other
+     * users' pickers as "unclaimed".
+     */
+    public function deleteAvatarGroup(string $groupId): bool
+    {
+        try {
+            $response = Http::withHeaders($this->headers())
+                ->timeout(30)
+                ->delete("{$this->baseUrl}/v2/avatar_group/{$groupId}");
+
+            if ($response->failed()) {
+                Log::error('HeyGen avatar group delete failed', ['group_id' => $groupId, 'status' => $response->status(), 'body' => $response->body()]);
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('HeyGen avatar group delete threw', ['group_id' => $groupId, 'error' => $e->getMessage()]);
+            return false;
         }
     }
 
