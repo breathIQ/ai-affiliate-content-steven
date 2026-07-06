@@ -280,6 +280,15 @@ class HeygenController extends ResponseController
                 'global_favorites' => $globalFavorites,
                 'recently_used' => $recentlyUsed,
                 'all' => $avatars,
+                // The exact numbers behind creditsForDuration(), so the
+                // wizard can show a live credit estimate as the user types
+                // a duration without a round-trip per keystroke.
+                'pricing' => [
+                    'cost_cents_per_second' => (float) config('services.credits.heygen_cost_cents_per_second'),
+                    'margin_multiplier' => (float) config('services.credits.heygen_margin_multiplier'),
+                    'price_cents_per_credit' => (float) config('services.credits.price_cents_per_credit'),
+                    'minimum_credits' => (int) config('services.credits.heygen_minimum_charge_credits'),
+                ],
             ], 'Avatars retrieved successfully', 200);
         } catch (\Throwable $e) {
             return $this->sendError('Could not retrieve avatars', ['error' => $e->getMessage()], 500);
