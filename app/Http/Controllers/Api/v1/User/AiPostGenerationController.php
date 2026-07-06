@@ -729,13 +729,26 @@ class AiPostGenerationController extends ResponseController
 
     }
 
+    /**
+     * "Chapter 6" from whatever the DB stores ("CHAPTER 6", "Chapter 6",
+     * or a bare "6"). Stops the on-image subtitle from reading "Chapter
+     * Chapter 6" when the stored value already includes the word.
+     */
+    private function chapterLabel($chapter): string
+    {
+        $num = trim(preg_replace('/^\s*chapter\s*/i', '', (string) $chapter->chapter));
+
+        return $num === '' ? 'Chapter' : "Chapter {$num}";
+    }
+
     private function buildSlideImagePrompt($chapter, $design,$textFormat, $imageText=null)
     {
+        $chapterLabel = $this->chapterLabel($chapter);
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         $affiliate_id = Auth::user()->affiliate_id;
         $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram for a medical educational post. 
             TITLE: 'The Carbonated Body' (Large, elegant serif font at the top).
-            SUBTITLE: 'Chapter {$chapter->chapter}: {$chapter->chapter_title}' (Positioned below the title).
+            SUBTITLE: '{$chapterLabel}: {$chapter->chapter_title}' (Positioned below the title).
 
             VISUAL CENTERPIECE: 
             Visual style: {$design['image_style']}
@@ -1063,7 +1076,8 @@ class AiPostGenerationController extends ResponseController
     
     private function buildGeminiImagePrompt($chapter,$design,$textFormat, $imageText=null)
     {
-        
+        $chapterLabel = $this->chapterLabel($chapter);
+
         $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
         //$imagepath =  base64_encode(file_get_contents($image_storage_path));
        
@@ -1424,7 +1438,7 @@ class AiPostGenerationController extends ResponseController
             
             PERMITTED TEXT IN IMAGE (Only these exact texts may appear — nothing else):
             1. 'The Carbonated Body'
-            2. '{$chapter->chapter}: {$chapter->chapter_title}'
+            2. '{$chapterLabel}: {$chapter->chapter_title}'
             3. A 35 to 50 word description generated from the chapter summary
             4. 'https://co2body.com/{$affiliate_id}'
             
@@ -1444,7 +1458,7 @@ class AiPostGenerationController extends ResponseController
             Divider color must complement the chosen background color.
             
             [UPPER MIDDLE — Chapter heading, 8% of canvas]
-            Render only: '{$chapter->chapter}: {$chapter->chapter_title}'
+            Render only: '{$chapterLabel}: {$chapter->chapter_title}'
             Style: Bold, accent color that complements the background, centered, medium-large font.
             No background, sits directly on the canvas background.
             
