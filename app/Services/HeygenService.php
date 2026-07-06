@@ -40,13 +40,14 @@ class HeygenService
     public const AVATAR_CACHE_KEY = 'heygen_avatars_v3';
 
     /**
-     * Public/community avatar groups adopted into this account's "My
-     * avatars" in HeyGen's UI. The avatar_group.list API only returns
-     * PRIVATE groups (include_public=true dumps the entire 550+ community
-     * catalog with no "added by me" flag), so adopted public groups have
-     * to be pinned here explicitly.
+     * Featured public/community avatar groups. Their looks are treated
+     * like the account's own (is_my_avatar - the picker's top "My
+     * Avatars" section) and lead the list in THIS array's order, ahead
+     * of the account's uploads. Steven curates this by naming avatars;
+     * adding one = add its group id here + run heygen:refresh-avatars.
      */
     protected const ADOPTED_PUBLIC_GROUPS = [
+        '9fe4a9a286724981982942538f29732c', // Gabrielle (20 looks) - Steven's headliner
         '8af078aa4e034870a0056a23cfa396d8', // Morgan
     ];
 
@@ -197,8 +198,16 @@ class HeygenService
                 return [];
             }
 
-            // Own groups first so their looks lead the merged list.
-            $groups = $groups->sortByDesc('is_own')->values();
+            // Ordering = display order: featured pins first (in constant
+            // order), then the account's own groups, then community.
+            $pinnedOrder = array_flip(self::ADOPTED_PUBLIC_GROUPS);
+            $groups = $groups->sortBy(function ($g) use ($pinnedOrder) {
+                $id = $g['id'] ?? '';
+                if (isset($pinnedOrder[$id])) {
+                    return $pinnedOrder[$id];
+                }
+                return $g['is_own'] ? 1000 : 2000;
+            })->values();
 
             // Fetch each group's looks in gentle batches - the community
             // catalog is 500+ groups and hammering HeyGen concurrently
@@ -227,6 +236,7 @@ class HeygenService
                 }
 
                 $groupLooks = $res->json('data.avatar_list') ?? [];
+                $lookIndex = 0;
 
                 foreach ($groupLooks as $look) {
                     // Some looks come back incomplete (mid-processing or
@@ -235,16 +245,26 @@ class HeygenService
                         continue;
                     }
 
+                    $lookIndex++;
                     $lookName = trim($look['name'] ?? '');
                     // Pinned public groups arrive without a name - fall
                     // back to the look's own name.
                     $groupName = $group['name'] ?? ($lookName !== '' ? $lookName : 'Avatar');
 
+                    $displayName = count($groupLooks) > 1 && $lookName !== '' && $lookName !== $groupName
+                        ? "{$groupName} - {$lookName}"
+                        : $groupName;
+
+                    // Unnamed looks in a multi-look group would all show
+                    // the same label - number them so they're tellable
+                    // apart ("Gabrielle", "Gabrielle 2", ...).
+                    if ($displayName === $groupName && count($groupLooks) > 1 && $lookIndex > 1) {
+                        $displayName = "{$groupName} {$lookIndex}";
+                    }
+
                     $looks[] = [
                         'avatar_id' => $look['id'],
-                        'avatar_name' => count($groupLooks) > 1 && $lookName !== '' && $lookName !== $groupName
-                            ? "{$groupName} - {$lookName}"
-                            : $groupName,
+                        'avatar_name' => $displayName,
                         'gender' => null,
                         'preview_image_url' => $look['image_url'] ?? null,
                         'preview_video_url' => $look['motion_preview_url'] ?? null,
