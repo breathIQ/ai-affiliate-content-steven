@@ -52,86 +52,144 @@ class HeygenService
 
     /**
      * Bust the cached avatar list - called whenever a user creates or
-     * deletes a photo avatar so it shows up (or disappears) immediately
-     * instead of after the daily cache expiry.
+     * deletes a photo avatar so it shows up (or disappears) immediately.
+     * A queued full rebuild is dispatched so the community catalog (which
+     * is too slow to fetch inside a web request) comes back within about
+     * a minute; until then the fast fallback list serves.
      */
+    /**
+     * The avatar list is several MB once the community catalog is in -
+     * bigger than the database cache store can hold on this host (values
+     * truncate at ~1MB and fail to unserialize). The file store has no
+     * such limit, so this key always lives there regardless of
+     * CACHE_STORE.
+     */
+    protected function avatarCache(): \Illuminate\Contracts\Cache\Repository
+    {
+        return Cache::store('file');
+    }
+
     public function forgetAvatarCache(): void
     {
-        Cache::forget(self::AVATAR_CACHE_KEY);
+        $this->avatarCache()->forget(self::AVATAR_CACHE_KEY);
+        \App\Jobs\RefreshHeygenAvatarCache::dispatch();
     }
 
     public function listAvatars(): array
     {
-        // Cache key versioned so deploys that change the shape don't
-        // serve a stale day-old structure.
-        return Cache::remember(self::AVATAR_CACHE_KEY, now()->addDay(), function () {
-            $response = Http::withHeaders($this->headers())
-                ->timeout(90)
-                ->get("{$this->baseUrl}/v2/avatars");
+        $cached = $this->avatarCache()->get(self::AVATAR_CACHE_KEY);
 
-            if ($response->failed()) {
-                Log::error('HeyGen list avatars failed', [
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
+        if ($cached !== null) {
+            return $cached;
+        }
 
-                throw new \RuntimeException('HeyGen list avatars failed: '.$response->body());
-            }
+        // Cold fallback, built inside a web request: stock + the account's
+        // own groups only. The full community catalog (500+ groups, one
+        // looks-call each) is far too slow for a request path - it's built
+        // by the heygen:refresh-avatars command (nightly + queued after
+        // cache busts) and replaces this with a longer-lived entry.
+        $avatars = array_merge($this->listMyAvatarLooks(false), $this->listStockAvatars());
+        $this->avatarCache()->put(self::AVATAR_CACHE_KEY, $avatars, now()->addHours(6));
 
-            $avatars = $response->json('data.avatars') ?? [];
-
-            // Exclude the account owner's own custom avatar clones - these
-            // are personal/test avatars, not meant to be offered as generic
-            // options for video generation.
-            $avatars = array_filter($avatars, fn ($a) => ! str_starts_with($a['avatar_name'], 'Steven Scott'));
-
-            $stock = array_map(fn ($a) => [
-                'avatar_id' => $a['avatar_id'],
-                'avatar_name' => $a['avatar_name'],
-                'gender' => $a['gender'],
-                'preview_image_url' => $a['preview_image_url'],
-                'preview_video_url' => $a['preview_video_url'],
-                'premium' => $a['premium'],
-            ], array_values($avatars));
-
-            // The account's own "My avatars" (photo avatar groups) live
-            // behind a different endpoint and never show up in /v2/avatars.
-            // Put them first so they're findable in search and can be
-            // surfaced as their own picker section.
-            return array_merge($this->listMyAvatarLooks(), $stock);
-        });
+        return $avatars;
     }
 
     /**
-     * Looks from the account's avatar groups ("My avatars" in HeyGen's UI:
-     * uploaded photo avatars, Design-with-AI generations, and clones).
-     * Flattened into the same shape as stock avatars, flagged
-     * is_my_avatar so the controller/frontend can group them. Failures
+     * The full avatar list including HeyGen's public/UGC/community photo
+     * avatar catalog. Takes 1-2 minutes (hundreds of per-group calls) -
+     * only ever run from the console command / queued job, never inline.
+     */
+    public function buildFullAvatarCache(): array
+    {
+        $avatars = array_merge($this->listMyAvatarLooks(true), $this->listStockAvatars());
+
+        // Long TTL: refreshed nightly by the scheduler; if a refresh run
+        // fails, yesterday's full list keeps serving instead of users
+        // falling back to the small list.
+        $this->avatarCache()->put(self::AVATAR_CACHE_KEY, $avatars, now()->addDays(7));
+
+        return $avatars;
+    }
+
+    protected function listStockAvatars(): array
+    {
+        $response = Http::withHeaders($this->headers())
+            ->timeout(90)
+            ->get("{$this->baseUrl}/v2/avatars");
+
+        if ($response->failed()) {
+            Log::error('HeyGen list avatars failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new \RuntimeException('HeyGen list avatars failed: '.$response->body());
+        }
+
+        $avatars = $response->json('data.avatars') ?? [];
+
+        // Exclude the account owner's own custom avatar clones - these
+        // are personal/test avatars, not meant to be offered as generic
+        // options for video generation.
+        $avatars = array_filter($avatars, fn ($a) => ! str_starts_with($a['avatar_name'], 'Steven Scott'));
+
+        return array_map(fn ($a) => [
+            'avatar_id' => $a['avatar_id'],
+            'avatar_name' => $a['avatar_name'],
+            'gender' => $a['gender'],
+            'preview_image_url' => $a['preview_image_url'],
+            'preview_video_url' => $a['preview_video_url'],
+            'premium' => $a['premium'],
+        ], array_values($avatars));
+    }
+
+    /**
+     * Looks from avatar groups, flattened into the same shape as stock
+     * avatars. Two modes:
+     * - $includeCommunity=false (fast, web-request safe): only the
+     *   account's own PRIVATE groups plus the pinned adopted public ones.
+     * - $includeCommunity=true (slow, command/job only): the entire
+     *   public/UGC/community photo-avatar catalog too (500+ groups, one
+     *   looks-call each, batched gently for rate limits).
+     * is_my_avatar marks the account's own groups (the picker's "My
+     * Avatars" section + per-user claims); community looks carry
+     * is_community instead and appear in search/browse only. Failures
      * return [] rather than breaking the whole picker over a side list.
      */
-    protected function listMyAvatarLooks(): array
+    protected function listMyAvatarLooks(bool $includeCommunity): array
     {
         try {
             $groupsResponse = Http::withHeaders($this->headers())
-                ->timeout(60)
-                ->get("{$this->baseUrl}/v2/avatar_group.list", ['include_public' => 'false']);
+                ->timeout(90)
+                ->get("{$this->baseUrl}/v2/avatar_group.list", [
+                    'include_public' => $includeCommunity ? 'true' : 'false',
+                ]);
 
             if ($groupsResponse->failed()) {
                 Log::error('HeyGen avatar_group.list failed', ['status' => $groupsResponse->status(), 'body' => $groupsResponse->body()]);
                 return [];
             }
 
+            // Group types observed: GENERATED_PHOTO / PHOTO / PRIVATE are
+            // the account's own; PUBLIC / PUBLIC_PHOTO / COMMUNITY_PHOTO
+            // are HeyGen's shared catalog.
+            $ownTypes = ['GENERATED_PHOTO', 'PHOTO', 'PRIVATE'];
+
             $groups = collect($groupsResponse->json('data.avatar_group_list') ?? [])
                 // Same rule as stock: the owner's personal clone groups
                 // aren't offered as generic options.
                 ->filter(fn ($g) => ! str_starts_with($g['name'] ?? '', 'Steven Scott'))
+                ->map(fn ($g) => $g + [
+                    'is_own' => in_array($g['group_type'] ?? '', $ownTypes, true)
+                        || in_array($g['id'] ?? '', self::ADOPTED_PUBLIC_GROUPS, true),
+                ])
                 ->values();
 
-            // Adopted public groups aren't in the private list - pin them
-            // in (name resolved from their looks below).
+            // Adopted public groups aren't in the private-only list - pin
+            // them in (name resolved from their looks below).
             foreach (self::ADOPTED_PUBLIC_GROUPS as $publicGroupId) {
                 if (! $groups->contains(fn ($g) => ($g['id'] ?? '') === $publicGroupId)) {
-                    $groups->push(['id' => $publicGroupId, 'name' => null]);
+                    $groups->push(['id' => $publicGroupId, 'name' => null, 'is_own' => true]);
                 }
             }
 
@@ -139,12 +197,25 @@ class HeygenService
                 return [];
             }
 
-            $responses = Http::pool(fn ($pool) => $groups->map(
-                fn ($g) => $pool->as($g['id'])
-                    ->withHeaders($this->headers())
-                    ->timeout(30)
-                    ->get("{$this->baseUrl}/v2/avatar_group/{$g['id']}/avatars")
-            )->all());
+            // Own groups first so their looks lead the merged list.
+            $groups = $groups->sortByDesc('is_own')->values();
+
+            // Fetch each group's looks in gentle batches - the community
+            // catalog is 500+ groups and hammering HeyGen concurrently
+            // risks rate limiting.
+            $responses = [];
+            foreach ($groups->chunk(15) as $chunk) {
+                $responses += Http::pool(fn ($pool) => $chunk->map(
+                    fn ($g) => $pool->as($g['id'])
+                        ->withHeaders($this->headers())
+                        ->timeout(30)
+                        ->get("{$this->baseUrl}/v2/avatar_group/{$g['id']}/avatars")
+                )->all());
+
+                if ($groups->count() > 15) {
+                    usleep(250000);
+                }
+            }
 
             $looks = [];
 
@@ -178,7 +249,8 @@ class HeygenService
                         'preview_image_url' => $look['image_url'] ?? null,
                         'preview_video_url' => $look['motion_preview_url'] ?? null,
                         'premium' => false,
-                        'is_my_avatar' => true,
+                        'is_my_avatar' => (bool) $group['is_own'],
+                        'is_community' => ! $group['is_own'],
                         // Lets the controller scope user-created avatars to
                         // their creator (heygen_photo_avatars claims).
                         'group_id' => $group['id'],
@@ -188,7 +260,7 @@ class HeygenService
 
             return $looks;
         } catch (\Throwable $e) {
-            Log::error('HeyGen my-avatar looks failed', ['error' => $e->getMessage()]);
+            Log::error('HeyGen avatar looks failed', ['error' => $e->getMessage()]);
             return [];
         }
     }
