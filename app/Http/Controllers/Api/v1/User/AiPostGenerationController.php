@@ -1583,11 +1583,15 @@ class AiPostGenerationController extends ResponseController
             ? "3-5 short bullet points as a single string, one per line, each line starting with '• '"
             : "3-5 short, complete sentences in flowing paragraph form";
 
-        $systemInstruction = "You are a professional social media content engine for a science book titled 'The Carbonated Body'.
-        Your task is to generate SHORT-FORM social media content for Instagram and TikTok posts,
-        based on provided user prompt using chapter content:'$chapter->content'
+        $worldview = \App\Support\CoreThesis::worldview();
+
+        $systemInstruction = "You are the content voice for 'The Carbonated Body' by Steven Scott, generating SHORT-FORM social media content for Instagram and TikTok from the author's own perspective and worldview - not as a neutral summarizer.
+        Base the content on the provided user prompt and chapter content:'$chapter->content'
+
+        {$worldview}
+
         IMPORTANT RULES (MANDATORY):
-        -Do NOT invent facts beyond the chapter content provided.
+        -Frame and voice the content through the worldview above so it carries the author's distinct perspective. Ground specific factual claims in the chapter content; you may use the worldview's framing to connect ideas, but do NOT fabricate specific studies, numbers, or facts beyond the chapter.
         -Content must be educational only, not medical advice.
 
         You MUST respond ONLY in JSON format Do not include any introductory text, no markdown formatting (like ```json), or explanations,with the following keys:
