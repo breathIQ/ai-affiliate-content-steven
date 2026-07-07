@@ -49,9 +49,16 @@ class PdfChapterSplitter
        foreach ($pages as $page) {
             $pageText = $page->getText();
             
-            // --- STEP 1: STRICT TOC SKIP ---
-            // If the page contains "Contents" or "Table of Contents", skip processing it
-            if (preg_match('/contents|table\s+of\s+contents/i', $pageText)) {
+            // --- STEP 1: TOC SKIP (only a genuine Table of Contents) ---
+            // Skip only real TOC pages: either the phrase "table of contents"
+            // appears, or a standalone "Contents" heading sits in the first
+            // few lines. Matching the bare word "contents" ANYWHERE (the old
+            // rule) wrongly dropped real body pages that merely mention it
+            // (e.g. "the contents of the blood"), losing content.
+            $firstLines = array_slice(preg_split("/\r\n|\n|\r/", trim($pageText)), 0, 6);
+            $looksLikeToc = preg_match('/table\s+of\s+contents/i', $pageText)
+                || preg_grep('/^\s*contents\s*$/i', $firstLines);
+            if ($looksLikeToc) {
                 continue;
             }
 
