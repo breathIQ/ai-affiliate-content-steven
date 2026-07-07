@@ -741,9 +741,32 @@ class AiPostGenerationController extends ResponseController
         return $num === '' ? 'Chapter' : "Chapter {$num}";
     }
 
+    /**
+     * Expand a chosen image-style label into a richer directive for the
+     * image model. The frontend's simple presets send short labels; this
+     * gives the model the descriptive detail that makes them actually look
+     * the part. Unknown/custom styles pass through unchanged.
+     */
+    private function expandStyle(?string $style): string
+    {
+        $style = trim((string) $style);
+
+        $map = [
+            'Cinematic Infographic' => 'a high-quality cinematic infographic: dramatic directional lighting, rich depth and subtle atmosphere, premium editorial polish, refined and cohesive color grading, crisp modern typography',
+            'Minimalist / Modern' => 'clean minimalist modern design: generous white space, crisp geometric shapes, a restrained and elegant palette',
+            'Scientific / Conceptual' => 'a precise scientific conceptual illustration: accurate molecular and physiological diagrams, clear labeled elements, clean technical style',
+            'Illustrated / Graphic' => 'bold vibrant graphic illustration: strong confident colors, high energy, modern poster style',
+            'Lifestyle / Wellness' => 'warm lifestyle wellness photography: natural soft light, real approachable people, calm and aspirational',
+            'Hyper-Realistic' => 'hyper-realistic photographic quality: lifelike detail, natural lighting, shallow depth of field',
+        ];
+
+        return $map[$style] ?? $style;
+    }
+
     private function buildSlideImagePrompt($chapter, $design,$textFormat, $imageText=null)
     {
         $chapterLabel = $this->chapterLabel($chapter);
+        $styleDirective = $this->expandStyle($design['image_style'] ?? '');
         $imagePath = Storage::disk('public')->path('assets/cover-image.png');
         $affiliate_id = Auth::user()->affiliate_id;
         $prompt = "Create a clean, professional medical infographic image in a 1:1 square format optimized for Instagram for a medical educational post. 
@@ -751,7 +774,7 @@ class AiPostGenerationController extends ResponseController
             SUBTITLE: '{$chapterLabel}: {$chapter->chapter_title}' (Positioned below the title).
 
             VISUAL CENTERPIECE: 
-            Visual style: {$design['image_style']}
+            Visual style: {$styleDirective}
             Mood: {$design['visual_mood']}
             Audience tone: {$design['human_presence']}
             Angle: {$design['content_angle']}
@@ -1077,6 +1100,7 @@ class AiPostGenerationController extends ResponseController
     private function buildGeminiImagePrompt($chapter,$design,$textFormat, $imageText=null)
     {
         $chapterLabel = $this->chapterLabel($chapter);
+        $styleDirective = $this->expandStyle($design['image_style'] ?? '');
 
         $image_storage_path = Storage::disk('public')->path('assets/cover-image.png');
         //$imagepath =  base64_encode(file_get_contents($image_storage_path));
@@ -1464,7 +1488,7 @@ class AiPostGenerationController extends ResponseController
             
             [MAIN VISUAL — Large illustration, 45% of canvas]
             A large, dramatic, high quality digital art illustration representing the themes in this text: '{$imageText}'
-            Style: {$design['image_style']}
+            Style: {$styleDirective}
             Mood: {$design['visual_mood']}
             Tone: {$design['human_presence']}
             Angle: {$design['content_angle']}
