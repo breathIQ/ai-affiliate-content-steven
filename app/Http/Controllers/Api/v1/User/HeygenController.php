@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\v1\User;
 
 use App\Http\Controllers\Api\v1\ResponseController;
+use App\Jobs\ProcessAudioVoiceGeneration;
 use App\Models\Chapter;
 use App\Models\HeygenGeneration;
 use App\Models\HeygenPhotoAvatar;
 use App\Models\HeygenUserFavoriteAvatar;
+use App\Models\HeygenVoiceClone;
 use App\Models\Post;
 use App\Services\CreditService;
 use App\Services\HeygenGenerationPoller;
@@ -19,7 +21,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use OpenAI\Laravel\Facades\OpenAI;
 
 class HeygenController extends ResponseController
@@ -46,6 +51,12 @@ class HeygenController extends ResponseController
             'orientation' => 'nullable|in:portrait,landscape',
             'avatar_id' => 'nullable|string',
             'voice_id' => 'nullable|string',
+            // Per-affiliate voice cloning. voice_mode picks the pipeline:
+            // 'agent' (default) = Video Agent + b-roll, optionally using the
+            // clone's HeyGen voice_id; 'audio' = open-source Chatterbox voice
+            // driving the user's photo avatar (talking-head).
+            'voice_clone_id' => 'nullable|integer',
+            'voice_mode' => 'nullable|in:agent,audio',
             'post_id' => 'nullable|exists:posts,id',
 
             // Publish-without-review: when set, a Post is created immediately
@@ -74,12 +85,49 @@ class HeygenController extends ResponseController
 
         $user = Auth::user();
         $durationSeconds = (float) $request->duration_seconds;
+        $voiceMode = $request->input('voice_mode', 'agent');
 
-        // Duration is chosen by the user upfront now, so the hold can be
-        // computed exactly instead of guessing a worst-case length. HeyGen's
-        // actual render can still come out a little different, which is why
-        // reconcileActualCost() below still adjusts once it's known.
+        // Resolve an optional cloned voice - must belong to this user and be
+        // ready. Two modes use it differently (see below).
+        $voiceClone = null;
+        if ($request->voice_clone_id) {
+            $voiceClone = HeygenVoiceClone::where('user_id', $user->id)
+                ->where('status', 'ready')
+                ->find($request->voice_clone_id);
+
+            if (! $voiceClone) {
+                return $this->sendError('That voice is not available.', [], 422);
+            }
+        }
+
+        if ($voiceMode === 'audio') {
+            // Talking-head (open-source Chatterbox) needs both a cloned voice
+            // and one of the user's OWN photo avatars to drive - that's the
+            // "their face + their voice" combination.
+            if (! $voiceClone) {
+                return $this->sendError('Talking-head mode needs one of your cloned voices.', [], 422);
+            }
+
+            $ownsAvatar = HeygenPhotoAvatar::where('user_id', $user->id)
+                ->where('status', 'ready')
+                ->where('look_id', $request->avatar_id)
+                ->exists();
+
+            if (! $ownsAvatar) {
+                return $this->sendError('Talking-head videos use your own photo avatar - pick one of your uploaded avatars.', [], 422);
+            }
+        } elseif ($voiceClone && ! $voiceClone->heygen_voice_id) {
+            // Rich (Video Agent) mode drives narration with a HeyGen voice_id;
+            // a Chatterbox-only clone has no such id and can't be used here.
+            return $this->sendError('This voice can only be used in talking-head mode.', [], 422);
+        }
+
+        // Render hold (reconciled later for agent mode). Talking-head adds a
+        // fixed synthesis charge on top; it's not duration-reconciled.
         $cost = $this->pricing->creditsForDuration($durationSeconds);
+        if ($voiceMode === 'audio') {
+            $cost += $this->pricing->creditsForSynthesis(strlen($request->script));
+        }
 
         if (! $this->credits->hasSufficientBalance($user, $cost)) {
             return $this->sendError(
@@ -98,6 +146,46 @@ class HeygenController extends ResponseController
         }
 
         try {
+            if ($voiceMode === 'audio') {
+                // Create the record up front, then synthesise + kick off the
+                // render in a background job - Chatterbox takes ~30-60s, too
+                // long to hold an HTTP request open. The poller finishes it
+                // once the job sets heygen_video_id.
+                $generation = HeygenGeneration::create([
+                    'user_id' => $user->id,
+                    'post_id' => $request->post_id,
+                    'heygen_session_id' => null,
+                    'heygen_video_id' => null,
+                    'prompt' => $request->script,
+                    'status' => 'processing',
+                    'generation_mode' => 'audio',
+                    'credits_charged' => $cost,
+                    'request_payload' => [
+                        'orientation' => $request->orientation ?? 'portrait',
+                        'avatar_id' => $request->avatar_id,
+                        'voice_clone_id' => $voiceClone->id,
+                        'voice_mode' => 'audio',
+                    ],
+                ]);
+
+                $this->attachPendingPublish($generation, $request, $user);
+                ProcessAudioVoiceGeneration::dispatch($generation->id);
+
+                return $this->sendResponse([
+                    'generation_id' => $generation->id,
+                    'heygen_session_id' => null,
+                    'status' => $generation->status,
+                    'generation_mode' => 'audio',
+                    'post_id' => $generation->post_id,
+                    'publish_action' => $request->input('publish_action', 'review'),
+                    'credits_balance' => $user->fresh()->credits_balance,
+                ], 'Video generation started', 201);
+            }
+
+            // Agent mode (default): Video Agent, with the clone's HeyGen voice
+            // if one was chosen (otherwise the agent picks, or an explicit
+            // stock voice_id is honoured).
+            //
             // Same personalized link already stamped onto image posts (see
             // PublishPostToSocialMedia's caption builder) - HeyGen videos
             // should carry it too, both on-screen and spoken aloud.
@@ -105,12 +193,16 @@ class HeygenController extends ResponseController
                 ? rtrim(Config::get('constant.frontend_url'), '/').'/'.$user->affiliate_id
                 : null;
 
+            $voiceId = ($voiceClone && $voiceClone->heygen_voice_id)
+                ? $voiceClone->heygen_voice_id
+                : $request->voice_id;
+
             $result = $this->heygen->generateFromPrompt([
                 'prompt' => $request->script,
                 'duration_seconds' => $durationSeconds,
                 'orientation' => $request->orientation ?? 'portrait',
                 'avatar_id' => $request->avatar_id,
-                'voice_id' => $request->voice_id,
+                'voice_id' => $voiceId,
                 'affiliate_url' => $affiliateUrl,
             ]);
 
@@ -121,47 +213,60 @@ class HeygenController extends ResponseController
                 'heygen_video_id' => $result['video_id'],
                 'prompt' => $request->script,
                 'status' => $result['status'],
+                'generation_mode' => 'agent',
                 'credits_charged' => $cost,
                 'request_payload' => $result['request_payload'],
             ]);
 
-            $publishAction = $request->input('publish_action', 'review');
-
-            if ($publishAction !== 'review') {
-                $post = $this->autoPublish->createPendingPost($user, (int) $request->chapter_id, $request->caption, 'heygen');
-                $generation->post_id = $post->id;
-                $generation->save();
-
-                $this->autoPublish->preparePendingPublish($post, [
-                    'platforms' => $request->platforms,
-                    'scheduled_at' => $publishAction === 'schedule' ? $request->scheduled_at : null,
-                    'content_disclose' => $request->content_disclose,
-                    'brand_organic' => $request->brand_organic,
-                    'branded_content' => $request->branded_content,
-                    'allow_comment' => $request->allow_comment,
-                    'allow_duet' => $request->allow_duet,
-                    'allow_stitch' => $request->allow_stitch,
-                    'privacy_level' => $request->privacy_level,
-                ]);
-            }
+            $this->attachPendingPublish($generation, $request, $user);
 
             return $this->sendResponse([
                 'generation_id' => $generation->id,
                 'heygen_session_id' => $generation->heygen_session_id,
                 'status' => $generation->status,
+                'generation_mode' => 'agent',
                 'post_id' => $generation->post_id,
-                'publish_action' => $publishAction,
+                'publish_action' => $request->input('publish_action', 'review'),
                 'credits_balance' => $user->fresh()->credits_balance,
             ], 'Video generation started', 201);
         } catch (\Throwable $e) {
-            // HeyGen request failed before we even got a session_id - refund
-            // immediately since nothing was generated.
-            $this->credits->refund($user, $cost, 'Refund: HeyGen request failed before session was created');
+            // Kickoff failed before anything was generated - refund immediately.
+            $this->credits->refund($user, $cost, 'Refund: HeyGen request failed before generation started');
 
             Log::error('HeyGen generation failed', ['error' => $e->getMessage(), 'user_id' => $user->id]);
 
             return $this->sendError('Video generation failed to start', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Shared publish-without-review setup for both generation modes: when the
+     * user chose publish_now/schedule, create the pending Post and hand it to
+     * PostAutoPublishService so the poller finalizes it once the render lands.
+     */
+    protected function attachPendingPublish(HeygenGeneration $generation, Request $request, $user): void
+    {
+        $publishAction = $request->input('publish_action', 'review');
+
+        if ($publishAction === 'review') {
+            return;
+        }
+
+        $post = $this->autoPublish->createPendingPost($user, (int) $request->chapter_id, $request->caption, 'heygen');
+        $generation->post_id = $post->id;
+        $generation->save();
+
+        $this->autoPublish->preparePendingPublish($post, [
+            'platforms' => $request->platforms,
+            'scheduled_at' => $publishAction === 'schedule' ? $request->scheduled_at : null,
+            'content_disclose' => $request->content_disclose,
+            'brand_organic' => $request->brand_organic,
+            'branded_content' => $request->branded_content,
+            'allow_comment' => $request->allow_comment,
+            'allow_duet' => $request->allow_duet,
+            'allow_stitch' => $request->allow_stitch,
+            'privacy_level' => $request->privacy_level,
+        ]);
     }
 
     /**
@@ -441,6 +546,157 @@ class HeygenController extends ResponseController
         ]);
 
         return $this->sendResponse(['favorited' => true], 'Added to favorites', 200);
+    }
+
+    /**
+     * Create a personal voice clone from an audio sample the user uploads or
+     * records. The sample is normalized to MP3, stored (a local backup plus a
+     * persistent HeyGen-hosted URL for Chatterbox), and a HeyGen native clone
+     * is attempted for rich (b-roll) mode - a null clone id is fine, the voice
+     * still works for talking-head mode. One-time credit charge, consent
+     * required, capped at 2 live voices per user.
+     */
+    public function createVoiceClone(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:60',
+            'audio' => 'required|file|mimetypes:audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/aac,video/webm|max:15360',
+            'consent' => 'required|accepted',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->sendValidationError($validator->errors());
+        }
+
+        $liveCount = HeygenVoiceClone::where('user_id', Auth::id())
+            ->whereIn('status', ['pending', 'ready'])
+            ->count();
+
+        if ($liveCount >= 2) {
+            return $this->sendError('You can have up to 2 voices. Delete one to create another.', [], 422);
+        }
+
+        $user = Auth::user();
+        $cost = $this->pricing->creditsForVoiceClone();
+
+        if (! $this->credits->hasSufficientBalance($user, $cost)) {
+            return $this->sendError(
+                "Not enough credits. Creating a voice costs {$cost} credits, you have {$user->credits_balance}.",
+                ['credits_required' => $cost, 'credits_balance' => $user->credits_balance],
+                422
+            );
+        }
+
+        if (! $this->credits->deduct($user, $cost, 'Voice clone creation')) {
+            return $this->sendError('Not enough credits.', [], 422);
+        }
+
+        try {
+            $file = $request->file('audio');
+            $ext = strtolower($file->getClientOriginalExtension() ?: 'webm');
+            $mp3 = $this->normalizeToMp3($file->get(), $ext);
+
+            // Local backup + a persistent public URL (HeyGen asset store) that
+            // fal can fetch as the Chatterbox reference on every generation.
+            $path = 'voice-samples/'.Str::uuid().'.mp3';
+            Storage::disk('local')->put($path, $mp3);
+            $asset = $this->heygen->uploadAudioAsset($mp3, 'audio/mpeg');
+
+            // HeyGen native clone (rich mode). Null => talking-head only.
+            $voiceId = $this->heygen->cloneVoice($mp3, $request->name);
+
+            $voice = HeygenVoiceClone::create([
+                'user_id' => $user->id,
+                'name' => $request->name,
+                'status' => 'ready',
+                'heygen_voice_id' => $voiceId,
+                'reference_audio_url' => $asset['url'],
+                'reference_audio_path' => $path,
+            ]);
+
+            return $this->sendResponse($voice, 'Voice created', 201);
+        } catch (\Throwable $e) {
+            $this->credits->refund($user, $cost, 'Refund: voice clone creation failed');
+            Log::error('Voice clone creation failed', ['error' => $e->getMessage(), 'user_id' => Auth::id()]);
+
+            return $this->sendError('Could not create the voice', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * This user's own voice clones (excludes soft-deleted ones).
+     */
+    public function listVoiceClones(Request $request)
+    {
+        $voices = HeygenVoiceClone::where('user_id', Auth::id())
+            ->where('status', '!=', 'deleted')
+            ->orderByDesc('id')
+            ->get();
+
+        return $this->sendResponse($voices, 'Voices retrieved successfully', 200);
+    }
+
+    /**
+     * Delete one of this user's voices. Voices are private to the shared
+     * HeyGen account and never surface in another user's picker, so a hard
+     * delete is safe (no tombstone needed as with photo avatars); the local
+     * sample is removed too.
+     */
+    public function deleteVoiceClone(Request $request, int $id)
+    {
+        $voice = HeygenVoiceClone::where('user_id', Auth::id())->findOrFail($id);
+
+        if ($voice->reference_audio_path) {
+            Storage::disk('local')->delete($voice->reference_audio_path);
+        }
+
+        $voice->delete();
+
+        return $this->sendResponse([], 'Voice deleted', 200);
+    }
+
+    /**
+     * Normalize an uploaded/recorded audio sample to mono 24kHz MP3 - a format
+     * both HeyGen's asset store and fal's Chatterbox reliably accept (browser
+     * MediaRecorder produces webm/ogg, which they may not). Falls back to the
+     * original bytes if ffmpeg isn't available.
+     */
+    protected function normalizeToMp3(string $bytes, string $ext): string
+    {
+        $ffmpeg = config('services.heygen.ffmpeg_path');
+
+        if (! $ffmpeg || ! is_executable($ffmpeg)) {
+            return $bytes;
+        }
+
+        $dir = storage_path('app/tmp');
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $in = $dir.'/voice-in-'.Str::uuid().'.'.$ext;
+        $out = $dir.'/voice-out-'.Str::uuid().'.mp3';
+
+        try {
+            file_put_contents($in, $bytes);
+
+            $result = Process::timeout(120)->run([
+                $ffmpeg, '-y', '-i', $in,
+                '-ac', '1', '-ar', '24000', '-c:a', 'libmp3lame', '-b:a', '128k',
+                $out,
+            ]);
+
+            if ($result->successful() && is_file($out)) {
+                return file_get_contents($out);
+            }
+
+            Log::warning('Voice sample ffmpeg normalize failed, using original bytes', ['error' => $result->errorOutput()]);
+
+            return $bytes;
+        } finally {
+            @unlink($in);
+            @unlink($out);
+        }
     }
 
     /**

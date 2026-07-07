@@ -164,6 +164,11 @@ Route::group(['prefix' => 'v1/user'], function () {
         Route::get('/heygen/photo-avatars', [HeygenController::class, 'listPhotoAvatars']);
         Route::delete('/heygen/photo-avatars/{id}', [HeygenController::class, 'deletePhotoAvatar']);
 
+        //*****************User voice clones (own voice)********************* */
+        Route::post('/heygen/voice-clones', [HeygenController::class, 'createVoiceClone'])->middleware('throttle:5,1');
+        Route::get('/heygen/voice-clones', [HeygenController::class, 'listVoiceClones']);
+        Route::delete('/heygen/voice-clones/{id}', [HeygenController::class, 'deleteVoiceClone']);
+
         //*****************Grok Image-to-Video Generation************************** */
         Route::post('/grok/generate-video', [GrokVideoController::class, 'generate'])->middleware('throttle:10,1');
         Route::get('/grok/videos/{id}/status', [GrokVideoController::class, 'status']);

@@ -78,6 +78,17 @@ return [
 
         'heygen_minimum_charge_credits' => (int) env('HEYGEN_MINIMUM_CHARGE_CREDITS', 5),
 
+        // Per-affiliate voice cloning. One-time charge to create/store a voice
+        // clone (a HeyGen native clone for "rich" b-roll mode and/or a stored
+        // reference sample for open-source Chatterbox "talking-head" mode).
+        // Placeholder value - tune once real usage is seen.
+        'voice_clone_cost_credits' => (int) env('VOICE_CLONE_COST_CREDITS', 20),
+
+        // Chatterbox HD (Resemble AI, open-source) synthesis on fal.ai, billed
+        // ~$0.025 per 1,000 characters. Marked up (reuses heygen_margin_multiplier)
+        // and added on top of the video render charge for talking-head videos.
+        'chatterbox_cost_cents_per_1k_chars' => (float) env('CHATTERBOX_COST_CENTS_PER_1K_CHARS', 2.5),
+
         // AI post image generation (chapter -> caption + 1-4 images). Two
         // different engines are used depending on the user's model choice,
         // with very different real costs:
@@ -158,6 +169,11 @@ return [
         'base_url' => env('FAL_BASE_URL', 'https://queue.fal.run'),
         'grok_video_model' => env('FAL_GROK_VIDEO_MODEL', 'xai/grok-imagine-video/image-to-video'),
         'grok_video_resolution' => env('FAL_GROK_VIDEO_RESOLUTION', '720p'),
+
+        // Chatterbox HD text-to-speech (Resemble AI, MIT-licensed model) for
+        // open-source voice cloning - confirmed 2026-07-07 against
+        // fal.ai/models/resemble-ai/chatterboxhd/text-to-speech.
+        'chatterbox_model' => env('FAL_CHATTERBOX_MODEL', 'resemble-ai/chatterboxhd/text-to-speech'),
     ],
 
 ];

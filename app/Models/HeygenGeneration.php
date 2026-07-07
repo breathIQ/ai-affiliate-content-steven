@@ -13,6 +13,7 @@ class HeygenGeneration extends Model
         'heygen_video_id',
         'prompt',
         'status',
+        'generation_mode',
         'video_url',
         'duration_seconds',
         'credits_charged',

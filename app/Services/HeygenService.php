@@ -534,4 +534,140 @@ class HeygenService
             'raw' => $data,
         ];
     }
+
+    /**
+     * Upload an audio file to HeyGen's asset store and return its asset id -
+     * used both as the reference-sample host for Chatterbox (the returned
+     * public URL) and as the audio_asset_id that drives a talking_photo
+     * video. HeyGen sniffs the file's real type, so $mime must match it
+     * exactly (notably audio/x-wav for a WAV, not audio/wav).
+     */
+    public function uploadAudioAsset(string $contents, string $mime): array
+    {
+        $response = Http::withHeaders(['X-Api-Key' => $this->apiKey, 'Content-Type' => $mime])
+            ->withBody($contents, $mime)
+            ->timeout(120)
+            ->post('https://upload.heygen.com/v1/asset');
+
+        $id = $response->json('data.id');
+
+        if ($response->failed() || ! $id) {
+            Log::error('HeyGen audio asset upload failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('HeyGen audio upload failed: '.$response->body());
+        }
+
+        return [
+            'asset_id' => $id,
+            'url' => $response->json('data.url'),
+        ];
+    }
+
+    /**
+     * Clone a voice from an audio sample. Contract confirmed live 2026-07-07:
+     * multipart POST to /v2/voices/clone with the file in field `file` and a
+     * `voice_name`, returning data.voice_id synchronously (the voice then
+     * processes asynchronously - poll getVoiceCloneStatus). Returns the
+     * voice_id, or null if HeyGen cloning isn't available/failed so the
+     * caller can still keep the voice for Chatterbox-only (talking-head) use.
+     */
+    public function cloneVoice(string $contents, string $name, string $filename = 'voice_sample.mp3'): ?string
+    {
+        try {
+            $response = Http::withHeaders(['X-Api-Key' => $this->apiKey])
+                ->attach('file', $contents, $filename)
+                ->timeout(120)
+                ->post('https://api.heygen.com/v2/voices/clone', ['voice_name' => $name]);
+
+            $voiceId = $response->json('data.voice_id');
+
+            if ($response->failed() || ! $voiceId) {
+                Log::warning('HeyGen voice clone unavailable/failed', ['status' => $response->status(), 'body' => $response->body()]);
+                return null;
+            }
+
+            return $voiceId;
+        } catch (\Throwable $e) {
+            Log::warning('HeyGen voice clone threw', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /**
+     * Status of a cloned voice. Returns a normalized status string; HeyGen
+     * reports 'processing' until the clone is usable (then a ready-like
+     * status). Failures return 'failed' rather than throwing so a pending
+     * refresh loop never breaks over a side call.
+     */
+    public function getVoiceCloneStatus(string $voiceId): string
+    {
+        try {
+            $response = Http::withHeaders($this->headers())
+                ->timeout(30)
+                ->get("{$this->baseUrl}/v3/voices/{$voiceId}");
+
+            if ($response->failed()) {
+                return 'processing';
+            }
+
+            return $response->json('data.status') ?? 'processing';
+        } catch (\Throwable $e) {
+            return 'processing';
+        }
+    }
+
+    /**
+     * Render a talking_photo (photo-avatar look) lip-syncing to a pre-uploaded
+     * audio asset - the open-source "talking-head" path that the Video Agent
+     * can't do (it only takes a voice_id, never raw audio). Returns the
+     * synchronously-issued video_id, polled afterwards via getAudioVideoStatus.
+     */
+    public function generateAudioDrivenVideo(string $talkingPhotoId, string $audioAssetId, array $dimension = ['width' => 720, 'height' => 1280]): string
+    {
+        $response = Http::withHeaders($this->headers())
+            ->timeout(60)
+            ->post('https://api.heygen.com/v2/video/generate', [
+                'video_inputs' => [[
+                    'character' => ['type' => 'talking_photo', 'talking_photo_id' => $talkingPhotoId],
+                    'voice' => ['type' => 'audio', 'audio_asset_id' => $audioAssetId],
+                ]],
+                'dimension' => $dimension,
+            ]);
+
+        $videoId = $response->json('data.video_id');
+
+        if ($response->failed() || ! $videoId) {
+            Log::error('HeyGen audio-driven generate failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('HeyGen audio-driven generation failed: '.$response->body());
+        }
+
+        return $videoId;
+    }
+
+    /**
+     * Render status for a video created via /v2/video/generate. That older
+     * pipeline reports through /v1/video_status.get rather than /v3/videos,
+     * so this is separate from getVideoStatus() but returns the same shape
+     * the poller already consumes.
+     */
+    public function getAudioVideoStatus(string $videoId): array
+    {
+        $response = Http::withHeaders(['X-Api-Key' => $this->apiKey])
+            ->timeout(30)
+            ->get('https://api.heygen.com/v1/video_status.get', ['video_id' => $videoId]);
+
+        if ($response->failed()) {
+            Log::error('HeyGen audio video status check failed', ['video_id' => $videoId, 'status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('HeyGen audio video status check failed: '.$response->body());
+        }
+
+        $body = $response->json('data') ?? [];
+
+        return [
+            'status' => $body['status'] ?? 'pending',
+            'video_url' => $body['video_url'] ?? null,
+            'duration' => $body['duration'] ?? null,
+            'error' => $body['error'] ?? null,
+            'raw' => $response->json(),
+        ];
+    }
 }

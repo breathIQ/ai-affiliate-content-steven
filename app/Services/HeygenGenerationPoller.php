@@ -27,8 +27,21 @@ class HeygenGenerationPoller
             return $generation;
         }
 
-        // Stage 1: do we have a video_id yet? Poll the agent session until we do.
-        if (! $generation->heygen_video_id) {
+        $isAudioMode = $generation->generation_mode === 'audio';
+
+        // Audio mode: the render is kicked off by ProcessAudioVoiceGeneration
+        // (voice synthesis + /v2/video/generate), which sets heygen_video_id
+        // when it succeeds. Until then there's nothing to poll - the job also
+        // owns the failure/refund path if synthesis or kickoff fails.
+        if ($isAudioMode && ! $generation->heygen_video_id) {
+            return $generation;
+        }
+
+        // Stage 1 (agent mode only): do we have a video_id yet? Poll the agent
+        // session until we do. Audio-mode generations are created with a
+        // video_id already set (the /v2/video/generate call returns it
+        // synchronously) and have no session, so they skip straight to Stage 2.
+        if (! $isAudioMode && ! $generation->heygen_video_id) {
             $session = $this->heygen->getSessionStatus($generation->heygen_session_id);
             $generation->status = $session['status'];
 
@@ -49,16 +62,25 @@ class HeygenGenerationPoller
             return $generation;
         }
 
-        // Stage 2: we have a video_id, poll its render status.
-        $result = $this->heygen->getVideoStatus($generation->heygen_video_id);
+        // Stage 2: we have a video_id, poll its render status. Audio-mode
+        // videos come from /v2/video/generate and report through a different
+        // status endpoint, but the returned shape is identical from here on.
+        $result = $isAudioMode
+            ? $this->heygen->getAudioVideoStatus($generation->heygen_video_id)
+            : $this->heygen->getVideoStatus($generation->heygen_video_id);
         $generation->status = $result['status'];
 
         if ($result['status'] === 'completed') {
             // Billing must reflect what HeyGen actually rendered, before
             // any outro is appended - the outro's seconds aren't billed.
+            // Audio mode skips reconciliation: its upfront charge bundles a
+            // fixed Chatterbox synthesis cost that duration-based
+            // reconciliation would wrongly refund away.
             if ($result['duration']) {
                 $generation->duration_seconds = $result['duration'];
-                $this->reconcileActualCost($generation, (float) $result['duration']);
+                if (! $isAudioMode) {
+                    $this->reconcileActualCost($generation, (float) $result['duration']);
+                }
             }
 
             $orientation = $generation->request_payload['orientation'] ?? 'portrait';
