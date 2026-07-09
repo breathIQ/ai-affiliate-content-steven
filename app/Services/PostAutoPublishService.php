@@ -53,7 +53,7 @@ class PostAutoPublishService
             'scheduled_at' => null,
             'published_at' => null,
             'hastag' => $hashtags,
-            'affiliate_url' => $user->amazon_link ?: env('AMAZON_URL'),
+            'affiliate_url' => $user->amazon_link ?: config('services.amazon.book_url'),
             'chapter_name' => $chapterName->chapter,
             'chapter_title' => $chapterName->chapter_title,
         ]);

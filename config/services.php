@@ -55,6 +55,12 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'amazon' => [
+        // Default destination for affiliate redirects: the book's Amazon page.
+        // Users can override it with a personal review link on their profile.
+        'book_url' => env('AMAZON_URL'),
+    ],
+
     'credits' => [
         'price_cents_per_credit' => (int) env('CREDIT_PRICE_CENTS', 10), // $0.10 per credit, placeholder - tune to real cost
 

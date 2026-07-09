@@ -31,8 +31,8 @@ class SocialTokenService
     private function refreshTikTokToken(SocialAccount $account)
     {
         $response = Http::asForm()->post('https://open.tiktokapis.com/v2/auth/token/refresh/', [
-            'client_key'    => env('TIKTOK_CLIENT_KEY'),
-            'client_secret' => env('TIKTOK_CLIENT_SECRET'),
+            'client_key'    => config('services.tiktok.client_key'),
+            'client_secret' => config('services.tiktok.client_secret'),
             'grant_type'    => 'refresh_token',
             'refresh_token' => $account->refresh_token,
         ]);

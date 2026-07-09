@@ -228,7 +228,7 @@ class PostController extends ResponseController
                 // 'published_at'=> $request->status === 'published' ? now() : null,
                  'published_at'=> null,
                 'hastag' => $request->hashtags,
-                'affiliate_url' => $user->amazon_link ?: env('AMAZON_URL'),
+                'affiliate_url' => $user->amazon_link ?: config('services.amazon.book_url'),
                 'chapter_name' => $chapterName->chapter,
                 'chapter_title' => $chapterName->chapter_title,
             ]);

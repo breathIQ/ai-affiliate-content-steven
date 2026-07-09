@@ -166,13 +166,20 @@ class AffiliateClickController extends ResponseController
                 }, 5); // retry 5 times automatically if deadlock happens
             }
 
-            $amazon_link = env('AMAZON_URL');
+            // env() returns null here when config is cached - must go through config()
+            $amazon_link = config('services.amazon.book_url');
 
             if(!blank($user->amazon_link)){
                 $amazon_link = $user->amazon_link;
             }
 
-            $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?link=".$amazon_link;
+            if (blank($user->other_affiliate_id)) {
+                // No carbogenetics.com affiliate id: the /ref/ hop would drop no
+                // cookie and dead-end on the homepage, so go straight to Amazon.
+                $redirecturl = $amazon_link;
+            } else {
+                $redirecturl = "https://carbogenetics.com/ref/".$user->other_affiliate_id."?link=".$amazon_link;
+            }
 
             // return redirect()->away($redirecturl);
             return $this->sendResponse($redirecturl, 'Redirect URL generated successfully', 200);
