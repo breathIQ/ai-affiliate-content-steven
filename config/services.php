@@ -59,6 +59,11 @@ return [
         // Default destination for affiliate redirects: the book's Amazon page.
         // Users can override it with a personal review link on their profile.
         'book_url' => env('AMAZON_URL'),
+
+        // ASIN/ISBN of every edition of the book. A user's personal review
+        // link must be a review permalink (which may carry one of these ASINs)
+        // or the book's own product page - never another product or page.
+        'book_asins' => array_filter(array_map('trim', explode(',', env('AMAZON_BOOK_ASINS', 'B0GW2FJ2X1,9941881677')))),
     ],
 
     'credits' => [

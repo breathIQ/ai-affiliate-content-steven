@@ -319,19 +319,45 @@ class UserAuthController extends ResponseController
                 'other_affiliate_id'  => 'nullable|digits_between:1,10',
 
                 
-                // amazon field 
+                // amazon field
                 'amazon_link' => [
-                    'required',
+                    'nullable',
                     'url',
                     function ($attribute, $value, $fail) {
                         $url = parse_url($value);
+                        $host = strtolower($url['host'] ?? '');
 
-                        if (
-                            !isset($url['scheme']) || $url['scheme'] !== 'https' ||
-                            !isset($url['host']) ||
-                            !preg_match('/(^|\.)amazon\.com$/', $url['host'])
-                        ) {
+                        if (($url['scheme'] ?? '') !== 'https' || !preg_match('/(^|\.)amazon\.com$/', $host)) {
                             $fail('The link must be a valid HTTPS Amazon.com URL.');
+                            return;
+                        }
+
+                        $path = $url['path'] ?? '';
+                        $bookAsins = array_map('strtoupper', config('services.amazon.book_asins', []));
+
+                        // The book's own product page is always acceptable;
+                        // any other product page is not.
+                        if (preg_match('#/(?:dp|gp/product)/([A-Z0-9]{10})#i', $path, $m)) {
+                            if (!in_array(strtoupper($m[1]), $bookAsins, true)) {
+                                $fail('This Amazon link points to a different product. Paste the link to your review of the book instead.');
+                            }
+                            return;
+                        }
+
+                        // Otherwise it must be a customer-review permalink, e.g.
+                        // /gp/customer-reviews/R... or /portal/customer-reviews/srp/-/R...
+                        if (!preg_match('#/customer-reviews/(?:[^/]+/)*R[A-Z0-9]{7,}#i', $path)
+                            && !preg_match('#^/review/R[A-Z0-9]{7,}#i', $path)) {
+                            $fail('The link must be your Amazon review of the book: open your review on Amazon and copy its link.');
+                            return;
+                        }
+
+                        // Classic review permalinks carry the product ASIN in the
+                        // query - when present it must be one of the book's editions.
+                        parse_str($url['query'] ?? '', $query);
+                        $asin = strtoupper($query['ASIN'] ?? $query['asin'] ?? '');
+                        if ($asin !== '' && $bookAsins && !in_array($asin, $bookAsins, true)) {
+                            $fail('This review link is for a different product, not the book.');
                         }
                     }
                 ],
