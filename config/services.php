@@ -188,4 +188,17 @@ return [
         'chatterbox_model' => env('FAL_CHATTERBOX_MODEL', 'resemble-ai/chatterboxhd/text-to-speech'),
     ],
 
+    // Carbogenetics affiliate provisioning (the new Next.js site on Vercel).
+    // At signup every co2body user is auto-enrolled as a carbogenetics.com
+    // affiliate via POST {base_url}/api/affiliate/provision; the returned
+    // ref_code is stored in users.other_affiliate_id and used by the
+    // co2body.com/{handle} -> carbogenetics.com/ref/{code} redirect chain.
+    // Until the DNS cutover, point base_url at the Vercel preview URL.
+    'carbogenetics' => [
+        'base_url' => env('CARBOGENETICS_BASE_URL', 'https://carbogenetics.com'),
+        // Nullable on purpose: a missing secret disables provisioning
+        // gracefully instead of fataling signup (HeygenService pattern).
+        'provision_secret' => env('CARBOGENETICS_PROVISION_SECRET'),
+    ],
+
 ];

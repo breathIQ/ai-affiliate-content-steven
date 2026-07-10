@@ -31,25 +31,53 @@ class UserAuthController extends ResponseController
                 'confirmed',
                 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/'
             ],
+            // Optional: an existing carbogenetics.com affiliate ID (old
+            // numeric AffiliateWP id or new text ref code) the user wants
+            // linked to this account instead of us creating a new one.
+            'carbogenetics_affiliate_id' => 'nullable|string|max:64|regex:/^[A-Za-z0-9_-]+$/',
         ],[
             'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.',
+            'carbogenetics_affiliate_id.regex' => 'Affiliate IDs only contain letters, numbers, dashes and underscores.',
         ]);
         if ($validator->fails()) {
             return $this->sendValidationError($validator->errors()->first());
         }
         try {
+            // If they claim an existing carbogenetics affiliate ID, verify it
+            // synchronously so typos and wrong-email claims fail the form
+            // with a clear message. Every other case (no code given, social
+            // signup, carbogenetics API briefly down) is handled after
+            // creation by UserObserver -> ProvisionCarbogeneticsAffiliate,
+            // which finds-or-creates the affiliate by email.
+            $carbogeneticsRefCode = null;
+            $claimedCode = trim((string) $request->input('carbogenetics_affiliate_id', ''));
+            if ($claimedCode !== '') {
+                $provision = app(\App\Services\CarbogeneticsAffiliateService::class)
+                    ->provision($request->email, $request->name, $claimedCode);
+                if ($provision['ok']) {
+                    $carbogeneticsRefCode = $provision['ref_code'];
+                } elseif ($provision['error'] === 'code_not_found') {
+                    return $this->sendValidationError('We couldn\'t find that Carbogenetics affiliate ID. Check it for typos, or leave the field blank and we\'ll find or create your affiliate account from your email.');
+                } elseif ($provision['error'] === 'email_mismatch') {
+                    return $this->sendValidationError('That Carbogenetics affiliate ID is registered to a different email address. Sign up with the email on your affiliate account, or leave the field blank.');
+                }
+                // unconfigured/unreachable: proceed — the queued job will
+                // enroll them by email once the API is available.
+            }
+
             $userRole = Role::where('role', 'User')->first();
-            
-            
+
+
             // Generate affiliate_id from name
             $affiliateId = $this->generateUniqueAffiliateId($request->name);
-            
+
             $user = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'role_id' => $userRole->id ?? 2,
                 'affiliate_id' => $affiliateId,
+                'other_affiliate_id' => $carbogeneticsRefCode,
                 'joined_by' => 'Email',
                 'status' => Config::get('constant.status.Active'),
             ]);
@@ -316,7 +344,9 @@ class UserAuthController extends ResponseController
                 'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
 
                 'affiliate_id' => 'nullable|string|max:60|unique:users,affiliate_id,' . $user->id,
-                'other_affiliate_id'  => 'nullable|digits_between:1,10',
+                // Old AffiliateWP IDs were numeric; the new carbogenetics.com
+                // system uses text ref codes.
+                'other_affiliate_id'  => 'nullable|string|max:64|regex:/^[A-Za-z0-9_-]+$/',
 
                 
                 // amazon field
