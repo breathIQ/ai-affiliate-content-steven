@@ -63,7 +63,8 @@ return [
         // ASIN/ISBN of every edition of the book. A user's personal review
         // link must be a review permalink (which may carry one of these ASINs)
         // or the book's own product page - never another product or page.
-        'book_asins' => array_filter(array_map('trim', explode(',', env('AMAZON_BOOK_ASINS', 'B0GW2FJ2X1,9941881677')))),
+        // B0GW2FJ2X1 = paperback, B0GX2WRBBB = Kindle, 9941881677 = ISBN
+        'book_asins' => array_filter(array_map('trim', explode(',', env('AMAZON_BOOK_ASINS', 'B0GW2FJ2X1,B0GX2WRBBB,9941881677')))),
     ],
 
     'credits' => [
