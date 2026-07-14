@@ -5,7 +5,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,StatsController,UserController,AffiliateController,
-    FileController,ContentController,CampaignController,CampaignCopyItemController,CampaignAssetController,CampaignReviewController};
+    FileController,ContentController,CampaignController,CampaignCopyItemController,CampaignAssetController,CampaignReviewController,
+    ApiBalanceController};
 use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController,
     AiPostGenerationController,TikTokAuthController,InstagramAuthController,BillingController,HeygenController,GrokVideoController,
     CampaignPostGenerationController,AutomationCampaignController};
@@ -70,6 +71,7 @@ Route::group(['prefix' => 'v1/admin'], function () {
         Route::get('dashboard', [DashboardController::class, 'getDashboardData']);
         Route::get('most-used-chapter', [DashboardController::class, 'getMostUsedChapter']);
         Route::get('stats', [StatsController::class, 'getStats']);
+        Route::get('api-balances', [ApiBalanceController::class, 'index']);
 
         //**************Auth functionaity route**************************** */
         Route::post('logout', [AuthController::class, 'logout']);

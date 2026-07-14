@@ -186,6 +186,24 @@ return [
         // open-source voice cloning - confirmed 2026-07-07 against
         // fal.ai/models/resemble-ai/chatterboxhd/text-to-speech.
         'chatterbox_model' => env('FAL_CHATTERBOX_MODEL', 'resemble-ai/chatterboxhd/text-to-speech'),
+
+        // fal's account-billing API (admin "API Credits" panel) rejects
+        // regular inference keys with 403 - it needs a key created with
+        // ADMIN scope at fal.ai/dashboard/keys. Falls back to FAL_KEY so the
+        // panel can at least show a helpful error until this is set.
+        'admin_api_key' => env('FAL_ADMIN_KEY'),
+    ],
+
+    // Read-only reporting keys used ONLY by the admin "API Credits" panel
+    // (ProviderBalanceService). Anthropic and OpenAI gate their cost APIs
+    // behind dedicated admin keys, separate from the normal inference keys
+    // in config/constant.php and config/openai.php. Leaving these unset just
+    // shows a "key missing" row in the panel - nothing else breaks.
+    'anthropic' => [
+        'admin_api_key' => env('ANTHROPIC_ADMIN_API_KEY'),
+    ],
+    'openai' => [
+        'admin_api_key' => env('OPENAI_ADMIN_API_KEY'),
     ],
 
     // Carbogenetics affiliate provisioning (the new Next.js site on Vercel).
