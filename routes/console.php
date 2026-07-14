@@ -26,6 +26,12 @@ Schedule::command('grok:poll-pending-publish')
     ->everyMinute()
     ->withoutOverlapping();
 
+// Fire any automation-campaign step whose scheduled time has arrived
+// (day-N sequences of auto-generated, auto-published content).
+Schedule::command('automation:run-due')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 // Full avatar-list rebuild (stock + own + the public/UGC/community
 // photo-avatar catalog). Hundreds of HeyGen calls, so it lives here
 // rather than in any web request; users always read the warm cache.

@@ -5,9 +5,10 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,StatsController,UserController,AffiliateController,
-    FileController,ContentController};
+    FileController,ContentController,CampaignController,CampaignCopyItemController,CampaignAssetController,CampaignReviewController};
 use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController,
-    AiPostGenerationController,TikTokAuthController,InstagramAuthController,BillingController,HeygenController,GrokVideoController};
+    AiPostGenerationController,TikTokAuthController,InstagramAuthController,BillingController,HeygenController,GrokVideoController,
+    CampaignPostGenerationController,AutomationCampaignController};
 
 
 // Route::get('/user', function (Request $request) {
@@ -51,6 +52,9 @@ Route::group(['prefix' => 'v1'], function () {
 
     Route::get('affiliate-clicks/{affiliate_id}',[AffiliateClickController::class,'affiliateClicks']);
 
+    //*****************Campaign resolve (called by Vercel microsite middleware)****** */
+    Route::get('campaign-resolve',[\App\Http\Controllers\CampaignRedirectController::class,'resolve']);
+
     Route::get('check-log',[AffiliateController::class,'checkLog']);
 });
 
@@ -90,6 +94,24 @@ Route::group(['prefix' => 'v1/admin'], function () {
         Route::get('/file', [FileController::class, 'getFile']);
 
 
+        //***************Campaign management + review************************* */
+        Route::get('campaigns', [CampaignController::class, 'index']);
+        Route::get('campaigns/{campaign}', [CampaignController::class, 'show']);
+        Route::match(['put', 'patch'], 'campaigns/{campaign}', [CampaignController::class, 'update']);
+
+        Route::apiResource('campaign-copy-items', CampaignCopyItemController::class)->except(['show']);
+        Route::post('campaign-copy-items/{campaign_copy_item}/approve', [CampaignCopyItemController::class, 'approve']);
+
+        Route::get('campaigns/{campaign}/assets', [CampaignAssetController::class, 'index']);
+        Route::post('campaigns/{campaign}/assets', [CampaignAssetController::class, 'store']);
+        Route::post('campaigns/{campaign}/assets/{asset}/current', [CampaignAssetController::class, 'setCurrent']);
+        Route::delete('campaigns/{campaign}/assets/{asset}', [CampaignAssetController::class, 'destroy']);
+
+        Route::get('campaigns-review-queue', [CampaignReviewController::class, 'queue']);
+        Route::post('campaigns-review/{post}/approve', [CampaignReviewController::class, 'approve']);
+        Route::post('campaigns-review/{post}/reject', [CampaignReviewController::class, 'reject']);
+
+
     });
 
 });
@@ -122,10 +144,25 @@ Route::group(['prefix' => 'v1/user'], function () {
         Route::post('/posts/{post}/repost', [PostController::class, 'repost']);
         Route::post('/posts/{post}/publish', [PostController::class, 'publish']);
         Route::post('/posts/{post}/media', [PostController::class, 'updateMedia']);
+        Route::post('/posts/{post}/media/reorder', [PostController::class, 'reorderMedia']);
+        Route::delete('/posts/{post}/media/{media}', [PostController::class, 'deleteMedia']);
+        Route::post('/campaigns/posts/{post}/slides/{media}/regenerate', [CampaignPostGenerationController::class, 'regenerateSlide'])->middleware('throttle:20,1');
 
 
         //*****************Ai Post Generation************************** */
         Route::post('/generate-ai-post', [AiPostGenerationController::class, 'generateContent'])->middleware('throttle:10,1'); // Limit to 10 requests per minute;
+
+        //*****************Campaign Post Generation (co2education/co2inhaler/co2suit/co2sauna)********* */
+        Route::get('/campaigns', [CampaignPostGenerationController::class, 'index']);
+        Route::post('/campaigns/generate', [CampaignPostGenerationController::class, 'generate'])->middleware('throttle:10,1');
+
+        //*****************Automation Campaigns (scheduled auto-published sequences)********* */
+        Route::get('/automations', [AutomationCampaignController::class, 'index']);
+        Route::post('/automations', [AutomationCampaignController::class, 'store']);
+        Route::get('/automations/{id}', [AutomationCampaignController::class, 'show']);
+        Route::match(['put', 'patch'], '/automations/{id}', [AutomationCampaignController::class, 'update']);
+        Route::post('/automations/{id}/status', [AutomationCampaignController::class, 'setStatus']);
+        Route::delete('/automations/{id}', [AutomationCampaignController::class, 'destroy']);
 
         //**************Auth functionaity route**************************** */
         Route::post('logout', [UserAuthController::class, 'logout']);
