@@ -76,14 +76,20 @@ class UserController extends ResponseController
     public function show(Request $request, $id)
     {
         try {
-            
-           $user = User::findOrFail($id);
-           
+
+           $user = User::withCount([
+                    'posts',
+                    'posts as published_posts_count' => fn ($q) => $q->where('status', 'published'),
+                ])
+                ->withSum('totalClicksByUser', 'total_clicks')
+                ->with('socialAccounts')
+                ->findOrFail($id);
+
             // if (!$user) {
-                
+
             //     return $this->sendError('user not found.', [], 404);
             // }
-            
+
             $user_data['id'] =  $user->id;
             $user_data['name'] =  $user->name;
             $user_data['affiliate_id'] =  $user->affiliate_id;
@@ -91,9 +97,25 @@ class UserController extends ResponseController
             $user_data['status'] =  $user->status;
             // $user_data['avatar'] = isset($user->avatar) ? asset(Storage::url($user->avatar)) : null;
             $user_data['avatar'] = isset($user->avatar) ? Config::get('constant.media_base_url').config('constant.media_base_path').$user->avatar : null;
+            $user_data['credits_balance'] = (int) $user->credits_balance;
+            $user_data['posts_generated'] = $user->posts_count;
+            $user_data['posts_published'] = $user->published_posts_count;
+            $user_data['total_clicks'] = (int) ($user->total_clicks_by_user_sum_total_clicks ?? 0);
+            $user_data['created_at'] = $user->created_at->format('Y-m-d H:i:s');
+            $user_data['social_accounts'] = $user->socialAccounts->map(function ($acc) {
+                return [
+                    'provider' => $acc->provider,
+                    'username' => $acc->username,
+                    'profile_url' => match ($acc->provider) {
+                        'instagram' => $acc->username ? 'https://www.instagram.com/' . ltrim($acc->username, '@') . '/' : null,
+                        'tiktok' => $acc->username ? 'https://www.tiktok.com/@' . ltrim($acc->username, '@') : null,
+                        default => null,
+                    },
+                ];
+            })->values();
 
             return $this->sendResponse($user_data, 'user data get successfully.', 200);
-        
+
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             
@@ -114,7 +136,7 @@ class UserController extends ResponseController
             $user = User::findOrFail($id);
 
             $query = $user->posts()
-                ->with(['chapter', 'media'])
+                ->with(['chapter', 'media', 'platforms'])
                 ->when($request->filled('search'), function ($q) use ($request) {
                     $search = $request->search;
                     $q->where(function ($sub) use ($search) {
@@ -145,6 +167,12 @@ class UserController extends ResponseController
                     'status' => $post->status,
                     'created_at' => $post->created_at->format('M d, Y'),
                     'published_at' => $post->published_at,
+                    'platforms' => $post->platforms->map(fn ($p) => [
+                        'platform' => $p->platform,
+                        'status' => $p->status,
+                        'clicks' => (int) $p->clicks,
+                        'published_at' => $p->published_at,
+                    ])->values(),
                 ];
             });
 

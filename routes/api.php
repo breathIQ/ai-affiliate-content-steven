@@ -6,7 +6,7 @@ use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\UserMiddleware;
 use App\Http\Controllers\Api\v1\Admin\{AuthController,DashboardController,StatsController,UserController,AffiliateController,
     FileController,ContentController,CampaignController,CampaignCopyItemController,CampaignAssetController,CampaignReviewController,
-    ApiBalanceController};
+    ApiBalanceController,TransactionController};
 use App\Http\Controllers\Api\v1\User\{UserAuthController,UserDashboardController,PostController,AffiliateClickController,
     AiPostGenerationController,TikTokAuthController,InstagramAuthController,BillingController,HeygenController,GrokVideoController,
     CampaignPostGenerationController,AutomationCampaignController};
@@ -86,6 +86,9 @@ Route::group(['prefix' => 'v1/admin'], function () {
         Route::post('update-status/{id}', [UserController::class, 'updateUserStatus']);
         // Route::post('update-status/{id}', [UserController::class, 'updateUserActiveStatus']);
         Route::get('user/{id}/posts', [UserController::class, 'getUserPosts']);
+
+        //***********Credit transactions (all users or ?user_id=)********* */
+        Route::get('transactions', [TransactionController::class, 'index']);
         Route::get('post/{postId}', [UserController::class, 'getPostDetail']);
         Route::delete('post/{postId}', [UserController::class, 'deletePost']);
 
