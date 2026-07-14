@@ -259,7 +259,9 @@ class ProviderBalanceService
                     $params['page'] = $page;
                 }
 
-                $response = Http::timeout(20)
+                // OpenAI's costs endpoint is far slower than their inference
+                // APIs; 20s was timing out from this server.
+                $response = Http::timeout(45)
                     ->withToken($adminKey)
                     ->acceptJson()
                     ->get('https://api.openai.com/v1/organization/costs', $params);
