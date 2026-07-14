@@ -35,14 +35,23 @@ class PublishPostToSocialMedia implements ShouldQueue
      */
     public function handle(): void
     {
+        // Defense in depth: never publish a flagged campaign post that hasn't
+        // been approved, even if it reached the queue somehow. No-op for book
+        // posts (campaign_id null).
+        if ($this->post->isBlockedByReview()) {
+            Log::warning('Blocked campaign post reached publish job; reverting to draft', ['post_id' => $this->post->id]);
+            $this->post->update(['status' => 'draft']);
+            return;
+        }
+
         // if (function_exists('opcache_reset')) {
         //     opcache_reset();
         //     \Log::info("OPcache has been reset!");
         // } else {
         //     \Log::info("OPcache is not enabled.");
         // }
-       
-        $platforms = $this->post->platforms()->whereIn('status', ['processing','failed'])->get();  
+
+        $platforms = $this->post->platforms()->whereIn('status', ['processing','failed'])->get();
         $user = $this->post->user;
         $hasFailure = false;
         
@@ -60,21 +69,28 @@ class PublishPostToSocialMedia implements ShouldQueue
                     throw new Exception("Social account for {$provider} not linked.");
                 }
 
+                $externalRef = null;
+
                 if ($platform == 'instagram') {
                     \Log::info("Publishing to instagram for Post");
 
-                    $this->publishToInstagram($account);
+                    $externalRef = $this->publishToInstagram($account);
                 } elseif ($platform === 'instagram_story') {
                     \Log::info("Publishing to instagram story for Post {$this->post->id}");
 
-                    $this->publishInstagramStories($account);
+                    $externalRef = $this->publishInstagramStories($account);
                 } elseif ($platform === 'tiktok') {
                     \Log::info("Publishing to TikTok for Post {$this->post->id}");
                     //$this->publishToTikTok($account);
-                    $this->tiktokPublish($account,$platformRecord->tiktok_payload);
+                    $externalRef = $this->tiktokPublish($account,$platformRecord->tiktok_payload);
                 }
 
-                $platformRecord->update(['status' => 'published','published_at' => now()]);
+                $platformRecord->update([
+                    'status' => 'published',
+                    'published_at' => now(),
+                    'external_post_id' => $externalRef['external_post_id'] ?? null,
+                    'external_url' => $externalRef['external_url'] ?? null,
+                ]);
 
             } catch (Exception $e) {
                 $hasFailure = true;
@@ -139,7 +155,9 @@ class PublishPostToSocialMedia implements ShouldQueue
         // Wait for the container to be ready
         $this->waitForIgContainer($containerId, $token);
 
-        return $this->finalizeIgPublish($igId, $token, $containerId);
+        $publishResult = $this->finalizeIgPublish($igId, $token, $containerId);
+
+        return $this->igExternalRef($publishResult['id'] ?? null, $token);
     }
 
     // private function createIgContainer($igId, $token, $media, $isCarouselItem)
@@ -229,6 +247,7 @@ class PublishPostToSocialMedia implements ShouldQueue
 
         $token = $account->access_token;
         $igId = $account->provider_user_id;
+        $firstFrameRef = null;
 
         foreach ($mediaItems as $item) {
             $url = Config::get('constant.media_base_url') . config('constant.media_base_path') . $item->media_path;
@@ -256,8 +275,16 @@ class PublishPostToSocialMedia implements ShouldQueue
             $containerId = $response->json()['id'];
 
             $this->waitForIgContainer($containerId, $token);
-            $this->finalizeIgPublish($igId, $token, $containerId);
+            $publishResult = $this->finalizeIgPublish($igId, $token, $containerId);
+
+            // Multi-image posts become several story frames; reference the
+            // first one (stories expire after 24h anyway).
+            if (!$firstFrameRef) {
+                $firstFrameRef = $this->igExternalRef($publishResult['id'] ?? null, $token);
+            }
         }
+
+        return $firstFrameRef;
     }
 
     private function createIgCarouselMaster($igId, $token, $itemIds)
@@ -286,6 +313,33 @@ class PublishPostToSocialMedia implements ShouldQueue
         \Log::info("Instagram account published section: finalizeIgPublish response: " . $response->body());
         if ($response->failed()) throw new Exception("IG Finalize Error: " . $response->body());
         return $response->json();
+    }
+
+    /**
+     * Build the stored external reference for a just-published IG media id.
+     * The permalink needs a separate Graph lookup; any failure here is
+     * swallowed because the publish itself already succeeded.
+     */
+    private function igExternalRef($mediaId, $token)
+    {
+        if (!$mediaId) {
+            return null;
+        }
+
+        $ref = ['external_post_id' => (string) $mediaId, 'external_url' => null];
+
+        try {
+            $response = Http::timeout(10)->get("https://graph.instagram.com/v19.0/{$mediaId}", [
+                'fields' => 'permalink',
+                'access_token' => $token,
+            ]);
+            $ref['external_url'] = $response->json()['permalink'] ?? null;
+            \Log::info("IG permalink for media {$mediaId}: " . ($ref['external_url'] ?? 'not returned'));
+        } catch (\Throwable $e) {
+            \Log::warning("IG permalink lookup failed for media {$mediaId}: " . $e->getMessage());
+        }
+
+        return $ref;
     }
 
     // private function publishToTikTok($account)
@@ -604,6 +658,7 @@ class PublishPostToSocialMedia implements ShouldQueue
 
 
         $responses = [];
+        $publishIds = [];
 
         /*
         |----------------------------------------
@@ -617,7 +672,10 @@ class PublishPostToSocialMedia implements ShouldQueue
 
             Log::info('TikTok Image Init Success', [$initData]);
             $publish_id = $initData['publish_id'] ?? null;
-            
+            if ($publish_id) {
+                $publishIds[] = $publish_id;
+            }
+
             $responses[] = $this->checkPublishStatus(
                 $publish_id,
                 $account
@@ -663,7 +721,7 @@ class PublishPostToSocialMedia implements ShouldQueue
 
                 $this->uploadVideo($videoPath, $uploadUrl);
 
-                $responses[] = $this->publishPost(
+                $videoResponse = $this->publishPost(
                     "video",
                     $caption,
                     $uploadId,
@@ -671,10 +729,70 @@ class PublishPostToSocialMedia implements ShouldQueue
                     $account,
                     $tiktokPayload
                 );
+                $responses[] = $videoResponse;
+
+                $videoPublishId = data_get($videoResponse, 'data.publish_id');
+                if ($videoPublishId) {
+                    $publishIds[] = $videoPublishId;
+                }
             }
         }
 
-        return $responses;
+        return $this->tiktokExternalRef($responses, $publishIds, $account);
+    }
+
+    /**
+     * TikTok publishes asynchronously, so the public post id usually isn't
+     * in the immediate responses. Try what we already have, then one short
+     * re-poll (photo direct-posts often finish within seconds); fall back
+     * to storing the publish handle with no URL. Never throws - a failed
+     * lookup must not fail a successful publish.
+     */
+    private function tiktokExternalRef(array $responses, array $publishIds, $account)
+    {
+        try {
+            $extract = function ($json) {
+                $postIds = data_get($json, 'data.publicaly_available_post_id');
+                if (is_array($postIds)) {
+                    return $postIds[0] ?? null;
+                }
+                return $postIds ?: null;
+            };
+
+            $postId = null;
+            foreach ($responses as $json) {
+                $postId = $postId ?: $extract($json);
+            }
+
+            if (!$postId && !empty($publishIds)) {
+                sleep(8);
+                foreach ($publishIds as $pid) {
+                    $postId = $extract($this->checkPublishStatus($pid, $account));
+                    if ($postId) {
+                        break;
+                    }
+                }
+            }
+
+            if ($postId) {
+                $username = ltrim((string) ($account->username ?? ''), '@');
+
+                return [
+                    'external_post_id' => (string) $postId,
+                    'external_url' => $username !== ''
+                        ? "https://www.tiktok.com/@{$username}/video/{$postId}"
+                        : null,
+                ];
+            }
+
+            if (!empty($publishIds)) {
+                return ['external_post_id' => (string) $publishIds[0], 'external_url' => null];
+            }
+        } catch (\Throwable $e) {
+            \Log::warning("TikTok external ref lookup failed: " . $e->getMessage());
+        }
+
+        return null;
     }
 
     protected function initPost($mediaType, $mediaPaths, $captionData,$account,$tiktokPayload)

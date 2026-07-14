@@ -172,6 +172,8 @@ class UserController extends ResponseController
                         'status' => $p->status,
                         'clicks' => (int) $p->clicks,
                         'published_at' => $p->published_at,
+                        'external_url' => $p->external_url,
+                        'external_post_id' => $p->external_post_id,
                     ])->values(),
                 ];
             });
